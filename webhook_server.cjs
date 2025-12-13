@@ -11,7 +11,7 @@ app.use(express.json({ limit: '50mb' })); // Aumentar limite para base64 de áud
 const PORT = process.env.PORT || 3000;
 const EVOLUTION_URL = process.env.EVOLUTION_URL || 'https://evolution.escreve.ai'; // URL da Nuvem
 const API_KEY = process.env.EVOLUTION_API_KEY || '429683C4C977415CAAFCCE10F7D57E11';   // Key fornecida
-const INSTANCE_NAME = 'saraiva'; // Nome Corrigido
+const INSTANCE_NAME = process.env.INSTANCE_NAME || 'Jesus'; // Nome da Instância (Default: Jesus)
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || 'SUA_OPENAI_KEY';       // OpenAI Key (mantenha a sua)
 
 // Configurações do Bot
