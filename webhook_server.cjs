@@ -185,52 +185,38 @@ async function processInteraction(remoteJid, message, userText, isAudioReply, us
     }
 }
 
-// ... API HELPERS ...
 
-// ...
-
-// === OPENAI HELPERS ===
-
-async function askOpenAI(prompt, userName) {
+// === API HELPERS ===
+async function makeRequest(method, path, data) {
     try {
-        const userContent = `O usuário se chama "${userName}". \n\nMensagem dele: ${prompt}`;
-
-        const response = await axios.post('https://api.openai.com/v1/chat/completions', {
-            model: "gpt-4o",
-            messages: [
-                { role: "system", content: SYSTEM_PROMPT },
-                { role: "user", content: userContent }
-            ]
-        }, {
-            headers: { 'Authorization': `Bearer ${OPENAI_API_KEY} ` }
-        });
-        return response.data.choices[0].message.content;
-    } catch (e) {
-        console.error("OpenAI Error:", e.message);
-        return "Desculpe, tive um erro interno.";
-    }
-}
-
-async function generateAudio(text) {
-    try {
-        const response = await axios.post('https://api.openai.com/v1/audio/speech', {
-            model: "tts-1",
-            input: text,
-            voice: "alloy"
-        }, {
-            headers: { 'Authorization': `Bearer ${OPENAI_API_KEY} ` },
-            responseType: 'arraybuffer'
+        const response = await axios({
+            method: method,
+            url: `${EVOLUTION_URL}${path}`,
+            headers: {
+                'apikey': API_KEY,
+                'Content-Type': 'application/json'
+            },
+            data: data
         });
         return response.data;
-    } catch (e) {
-        console.error("OpenAI TTS Error:", e.message);
-        throw e;
+    } catch (error) {
+        console.error(`Error in makeRequest to ${path}:`, error.message);
+        if (error.response) {
+            console.error('Response data:', error.response.data);
+            console.error('Response status:', error.response.status);
+        }
+        throw error;
     }
 }
 
 // Utilitários
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 function randomInt(min, max) { return Math.floor(Math.random() * (max - min + 1) + min); }
+function splitTextIntoSentences(text) {
+    // Regex para dividir em frases (considera . ! ? e quebras de linha)
+    const sentences = text.match(/[^.!?\n]+[.!?\n]+/g) || [];
+    return sentences.map(s => s.trim()).filter(s => s.length > 0);
+}
 
 app.listen(PORT, () => {
     console.log(`🤖 Servidor Avançado rodando na porta ${PORT} `);
