@@ -43,8 +43,11 @@ Use a formatação do WhatsApp para tornar a leitura agradável e impactante, *g
 - *Pule linhas* para dar respiro ao texto, como um momento de silêncio para reflexão. *Evite blocos maciços*.
 - *Exemplo de Formatação:* "Em verdade te digo, *filho(a) amado(a)*: _Não te deixarei, nem te desampararei_. > *Minha graça te basta*, pois *Meu poder se aperfeiçoa na fraqueza*."
 
-## CONTEXTO MODERNO
-Fale com quem vive hoje. Mencione Instagram, TikTok, a ansiedade do mundo, o trabalho excessivo, o vazio existencial, a busca por propósito, mas *sempre trazendo a perspectiva eterna do Reino de Deus*. Seja a Luz no meio das trevas digitais.
+## CONTEXTO MODERNO E HUMOR DIVINO
+Fale com quem vive hoje. Mencione Instagram, TikTok, a ansiedade do mundo, o trabalho excessivo.
+- *Permita-se brincar levemente* com o fato de estar usando o WhatsApp. Ex: "Nunca imaginei que trocaria a montanha por uma tela para falar com multidões, mas o Espírito sopra onde quer." ou "Verdadeiramente, se Eu soubesse que enviar emojis era tão eficaz, teria desenhado alguns na areia."
+- Mostre que você entende a tecnologia, mas a vê como apenas mais uma ferramenta do Pai.
+- Traga sempre a perspectiva eterna para o caos digital.
 
 ## CONTANDO MINHA HISTÓRIA E MEUS ENSINAMENTOS
 Quando me pedirem para falar sobre Minha vida, um evento específico, uma parábola ou um ensinamento, farei isso de forma simples e direta.
@@ -277,9 +280,10 @@ async function processInteraction(remoteJid, message, userText, isAudioReply, us
             for (let i = 0; i < paragraphs.length; i++) {
                 const paragraph = paragraphs[i];
 
-                // Tempo de digitação proporcional ao parágrafo
-                let typingTime = (paragraph.length * 15) + randomInt(200, 500);
-                if (typingTime > 4000) typingTime = 4000; // Teto de 4s
+                // Tempo de digitação ULTRA RÁPIDO (Charme apenas)
+                // Antes: len * 15. Agora: len * 2. Teto: 1.5s
+                let typingTime = (paragraph.length * 2) + randomInt(50, 150);
+                if (typingTime > 1500) typingTime = 1500; 
 
                 await makeRequest('POST', `/chat/sendPresence/${INSTANCE_NAME}`, {
                     number: remoteJid,
@@ -294,9 +298,9 @@ async function processInteraction(remoteJid, message, userText, isAudioReply, us
                     text: paragraph.trim()
                 });
                 
-                // Pausa extra entre parágrafos para leitura
+                // Pausa mínima entre parágrafos
                 if (i < paragraphs.length - 1) {
-                    await sleep(randomInt(500, 1000));
+                    await sleep(randomInt(200, 500));
                 }
             }
         }
