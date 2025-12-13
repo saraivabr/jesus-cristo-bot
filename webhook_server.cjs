@@ -7,6 +7,7 @@ const cron = require('node-cron'); // Agendamento
 const app = express();
 
 const activeDisciples = new Set(); // Memória volátil dos discípulos ativos
+const messageBuffer = new Map(); // Buffer para debounce de mensagens
 
 app.use(express.json({ limit: '50mb' })); // Aumentar limite para base64 de áudio
 
@@ -137,8 +138,35 @@ app.post('/webhook', async (req, res) => {
 
             if (!userText) return res.sendStatus(200);
 
-            // 3. HUMANIZAÇÃO: Ler, Reagir, Digitar
-            processInteraction(remoteJid, message, userText, isAudio, userName);
+            // 3. DEBOUNCE (Ouvido Atento)
+            // Em vez de responder na hora, guardamos no buffer
+            if (!messageBuffer.has(remoteJid)) {
+                messageBuffer.set(remoteJid, {
+                    texts: [],
+                    timer: null,
+                    userName: userName // Guarda o nome
+                });
+            }
+
+            const buffer = messageBuffer.get(remoteJid);
+            buffer.texts.push(userText);
+
+            // Se já tinha um timer, cancela (o usuário continuou falando)
+            if (buffer.timer) {
+                clearTimeout(buffer.timer);
+            }
+
+            // Define novo timer para processar tudo daqui a 3 segundos
+            buffer.timer = setTimeout(() => {
+                const combinedText = buffer.texts.join(" "); // Junta tudo
+                console.log(`[${remoteJid}] Processando bloco de mensagens: "${combinedText}"`);
+                
+                // Limpa o buffer para novas mensagens
+                messageBuffer.delete(remoteJid);
+
+                // Processa
+                processInteraction(remoteJid, message, combinedText, isAudio, buffer.userName);
+            }, 3000); // 3 segundos de silêncio para responder
         }
 
         res.sendStatus(200);
@@ -239,25 +267,38 @@ async function processInteraction(remoteJid, message, userText, isAudioReply, us
                 quoted: { key: message.key, message: message.message }
             });
         } else {
-            // ... lógica de texto (SIMPLIFICADA: Envia tudo de uma vez para não quebrar formatação)
-            console.log(`[${remoteJid}] Enviando mensagem completa para ${userName}.`);
+            // ... lógica de texto (QUEBRA INTELIGENTE POR PARÁGRAFOS)
+            
+            // Divide por quebra de linha dupla (parágrafos) para dar respiro visual
+            const paragraphs = finalText.split(/\n\s*\n/).filter(p => p.trim().length > 0);
+            
+            console.log(`[${remoteJid}] Enviando ${paragraphs.length} parágrafos para ${userName}.`);
 
-            // Calcula tempo de digitação baseado no tamanho total (max 3s)
-            let typingTime = (finalText.length * 10) + randomInt(100, 300);
-            if (typingTime > 3000) typingTime = 3000;
+            for (let i = 0; i < paragraphs.length; i++) {
+                const paragraph = paragraphs[i];
 
-            await makeRequest('POST', `/chat/sendPresence/${INSTANCE_NAME}`, {
-                number: remoteJid,
-                presence: 'composing',
-                delay: typingTime
-            });
+                // Tempo de digitação proporcional ao parágrafo
+                let typingTime = (paragraph.length * 15) + randomInt(200, 500);
+                if (typingTime > 4000) typingTime = 4000; // Teto de 4s
 
-            await sleep(typingTime);
+                await makeRequest('POST', `/chat/sendPresence/${INSTANCE_NAME}`, {
+                    number: remoteJid,
+                    presence: 'composing',
+                    delay: typingTime
+                });
 
-            await makeRequest('POST', `/message/sendText/${INSTANCE_NAME}`, {
-                number: remoteJid,
-                text: finalText
-            });
+                await sleep(typingTime);
+
+                await makeRequest('POST', `/message/sendText/${INSTANCE_NAME}`, {
+                    number: remoteJid,
+                    text: paragraph.trim()
+                });
+                
+                // Pausa extra entre parágrafos para leitura
+                if (i < paragraphs.length - 1) {
+                    await sleep(randomInt(500, 1000));
+                }
+            }
         }
 
     } catch (e) {
