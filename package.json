@@ -1,0 +1,17 @@
+{
+  "name": "jesus-divine-agent",
+  "version": "1.0.0",
+  "description": "Jesus Agent Webhook Server",
+  "main": "webhook_server.cjs",
+  "scripts": {
+    "start": "node webhook_server.cjs"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "axios": "^1.6.2",
+    "form-data": "^4.0.0"
+  },
+  "engines": {
+    "node": "20.x"
+  }
+}
