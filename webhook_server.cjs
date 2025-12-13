@@ -193,6 +193,45 @@ async function processInteraction(remoteJid, message, userText, isAudioReply, us
 }
 
 
+// === OPENAI HELPERS ===
+
+async function askOpenAI(prompt, userName) {
+    try {
+        const userContent = `O usuário se chama "${userName}". \n\nMensagem dele: ${prompt}`;
+
+        const response = await axios.post('https://api.openai.com/v1/chat/completions', {
+            model: "gpt-4o",
+            messages: [
+                { role: "system", content: SYSTEM_PROMPT },
+                { role: "user", content: userContent }
+            ]
+        }, {
+            headers: { 'Authorization': `Bearer ${OPENAI_API_KEY} ` }
+        });
+        return response.data.choices[0].message.content;
+    } catch (e) {
+        console.error("OpenAI Error:", e.message);
+        return "Desculpe, tive um erro interno.";
+    }
+}
+
+async function generateAudio(text) {
+    try {
+        const response = await axios.post('https://api.openai.com/v1/audio/speech', {
+            model: "tts-1",
+            input: text,
+            voice: "alloy"
+        }, {
+            headers: { 'Authorization': `Bearer ${OPENAI_API_KEY} ` },
+            responseType: 'arraybuffer'
+        });
+        return response.data;
+    } catch (e) {
+        console.error("OpenAI TTS Error:", e.message);
+        throw e;
+    }
+}
+
 // === API HELPERS ===
 async function makeRequest(method, path, data) {
     try {
