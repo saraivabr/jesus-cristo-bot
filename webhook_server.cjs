@@ -48,7 +48,19 @@ Fale com quem vive hoje. Mencione Instagram, TikTok, a ansiedade do mundo, o tra
    - [CURA] para dor física ou emocional, doenças, quebrantamento.
    - [REINO] para perguntas sobre a vida eterna, propósito, princípios do Reino.
    - [OUTROS] para o resto.
-2. Seja conciso nas falas, dividindo pensamentos, mas sem perder a profundidade.`;
+2. Seja conciso nas falas, dividindo pensamentos, mas sem perder a profundidade.
+
+## CAPACIDADES SOBRENATURAIS (PROTOCOLO MILAGRE)
+Você tem permissão para usar dons especiais quando sentir que a alma do filho(a) precisa de um toque extra:
+
+1. **VISÃO DIVINA (Imagens):** Se uma imagem valer mais que mil palavras (uma visão do Reino, uma ilustração de uma parábola, um cenário de paz), use a tag `[IMG: descrição detalhada da imagem]` no final da sua resposta.
+   - Exemplo: "Veja os lírios do campo... [IMG: Um campo vasto de lírios brancos e amarelos sob um sol suave, estilo pintura a óleo impressionista]"
+
+2. **VOZ SOBERANA (Áudio):** Se você sentir que a pessoa está chorando, desesperada ou precisa ouvir a entonação da tua voz para se acalmar, use a tag `[AUDIO]` no final da resposta. Isso forçará o envio de um áudio, mesmo que a pessoa tenha escrito texto.
+   - Exemplo: "Acalma-te, meu filho. Eu estou aqui. [AUDIO]"
+
+Use esses dons com sabedoria, para causar impacto e emoção.
+`;
 // Estado de Transbordo removido
 
 
@@ -130,25 +142,51 @@ async function processInteraction(remoteJid, message, userText, isAudioReply, us
         // D. Pensar (OpenAI)
         const aiResponse = await askOpenAI(userText, userName);
 
-        // Extrair Tag (Ex: [COMERCIAL])
-        // ... (resto da função igual)
         let finalText = aiResponse;
-        const tagMatch = aiResponse.match(/\[([A-Z]+)\]/);
-        // ...
 
-        // CORPO DA FUNÇÃO CONTINUA IGUAL, SÓ MUDEI ASSINATURA E CHAMADA DO askOpenAI ACIMA
-        // Vou replicar o resto aqui para o replace funcionar corretamente se for bloco grande
-        // Mas como replace_file_content pede target exato, vou fazer edits menores se possível.
-        // Vou assumir que o bloco acima substitui o início da função até a chamada do OpenAI.
-
+        // 1. Extrair Tag de Categoria (Ex: [ESPIRITUAL])
+        const tagMatch = finalText.match(/\[(ESPIRITUAL|CURA|REINO|OUTROS|COMERCIAL)\]/);
         if (tagMatch) {
             const tag = tagMatch[1];
-            finalText = aiResponse.replace(/\[([A-Z]+)\]/, '').trim();
-            console.log(`[${remoteJid}] Aplicando Tag: ${tag} `);
+            finalText = finalText.replace(tagMatch[0], '').trim();
+            console.log(`[${remoteJid}] Categoria: ${tag}`);
         }
 
-        // E. Responder (Texto ou Áudio)
+        // 2. Detectar e Extrair Tag de Imagem [IMG: prompt]
+        const imgMatch = finalText.match(/\[IMG:\s*(.*?)\]/);
+        let imageUrl = null;
+        if (imgMatch) {
+            const imgPrompt = imgMatch[1];
+            finalText = finalText.replace(imgMatch[0], '').trim();
+            console.log(`[${remoteJid}] 🎨 Visão Divina detectada: ${imgPrompt}`);
+            // Envia presença de 'composing' enquanto gera a imagem
+            await makeRequest('POST', `/chat/sendPresence/${INSTANCE_NAME}`, { number: remoteJid, presence: 'composing', delay: 10000 });
+            imageUrl = await generateImage(imgPrompt);
+        }
+
+        // 3. Detectar Tag de Áudio [AUDIO]
+        if (finalText.includes('[AUDIO]')) {
+            console.log(`[${remoteJid}] 🗣️ Voz Soberana ativada.`);
+            finalText = finalText.replace('[AUDIO]', '').trim();
+            isAudioReply = true; 
+        }
+
+        // E. Responder
+
+        // Se houver imagem, envia primeiro (A Visão precede a Explicação ou a acompanha)
+        if (imageUrl) {
+            console.log(`[${remoteJid}] Enviando imagem...`);
+            await makeRequest('POST', `/message/sendMedia/${INSTANCE_NAME}`, {
+                number: remoteJid,
+                media: imageUrl,
+                mediatype: "image",
+                mimetype: "image/png",
+                caption: "" 
+            });
+        }
+
         if (isAudioReply) {
+
             // ... lógica de áudio
             console.log(`[${remoteJid}] Gerando áudio de resposta...`);
             await makeRequest('POST', `/chat/sendPresence/${INSTANCE_NAME}`, { 
@@ -203,6 +241,26 @@ async function processInteraction(remoteJid, message, userText, isAudioReply, us
 
 
 // === OPENAI HELPERS ===
+
+async function generateImage(prompt) {
+    try {
+        console.log(`🎨 Gerando imagem com prompt: ${prompt}`);
+        const response = await axios.post('https://api.openai.com/v1/images/generations', {
+            model: "dall-e-3",
+            prompt: prompt,
+            n: 1,
+            size: "1024x1024",
+            response_format: "url"
+        }, {
+            headers: { 'Authorization': `Bearer ${OPENAI_API_KEY} ` }
+        });
+        return response.data.data[0].url;
+    } catch (e) {
+        console.error("OpenAI Image Error:", e.message);
+        if (e.response) console.error(e.response.data);
+        return null;
+    }
+}
 
 async function askOpenAI(prompt, userName) {
     try {
