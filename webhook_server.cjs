@@ -239,38 +239,25 @@ async function processInteraction(remoteJid, message, userText, isAudioReply, us
                 quoted: { key: message.key, message: message.message }
             });
         } else {
-            // ... lógica de texto
-            const sentences = splitTextIntoSentences(finalText);
-            console.log(`[${remoteJid}] Enviando ${sentences.length} mensagens fracionadas para ${userName}.`);
+            // ... lógica de texto (SIMPLIFICADA: Envia tudo de uma vez para não quebrar formatação)
+            console.log(`[${remoteJid}] Enviando mensagem completa para ${userName}.`);
 
-            for (let i = 0; i < sentences.length; i++) {
-                const sentence = sentences[i];
-                
-                // AJUSTE DE VELOCIDADE: 
-                // Antes: len * 60 (muito lento). Agora: len * 10 (rápido).
-                // Máximo de 2.5s de typing para não travar.
-                let typingTime = (sentence.length * 10) + randomInt(100, 300);
-                if (typingTime > 2500) typingTime = 2500;
+            // Calcula tempo de digitação baseado no tamanho total (max 3s)
+            let typingTime = (finalText.length * 10) + randomInt(100, 300);
+            if (typingTime > 3000) typingTime = 3000;
 
-                await makeRequest('POST', `/chat/sendPresence/${INSTANCE_NAME}`, {
-                    number: remoteJid,
-                    presence: 'composing',
-                    delay: typingTime
-                });
+            await makeRequest('POST', `/chat/sendPresence/${INSTANCE_NAME}`, {
+                number: remoteJid,
+                presence: 'composing',
+                delay: typingTime
+            });
 
-                await sleep(typingTime);
+            await sleep(typingTime);
 
-                const options = {
-                    number: remoteJid,
-                    text: sentence
-                };
-
-                if (i === 0) {
-                    options.quoted = { key: message.key, message: message.message };
-                }
-
-                await makeRequest('POST', `/message/sendText/${INSTANCE_NAME}`, options);
-            }
+            await makeRequest('POST', `/message/sendText/${INSTANCE_NAME}`, {
+                number: remoteJid,
+                text: finalText
+            });
         }
 
     } catch (e) {
@@ -417,11 +404,6 @@ async function broadcastDailyWord(force = false) {
 // Utilitários
 function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 function randomInt(min, max) { return Math.floor(Math.random() * (max - min + 1) + min); }
-function splitTextIntoSentences(text) {
-    // Regex para dividir em frases (considera . ! ? e quebras de linha)
-    const sentences = text.match(/[^.!?\n]+[.!?\n]+/g) || [];
-    return sentences.map(s => s.trim()).filter(s => s.length > 0);
-}
 
 app.listen(PORT, () => {
     console.log(`🤖 Servidor Avançado rodando na porta ${PORT} `);
