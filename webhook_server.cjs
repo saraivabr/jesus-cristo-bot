@@ -232,7 +232,12 @@ async function processInteraction(remoteJid, message, userText, isAudioReply, us
 
             for (let i = 0; i < sentences.length; i++) {
                 const sentence = sentences[i];
-                const typingTime = (sentence.length * 60) + randomInt(500, 1000);
+                
+                // AJUSTE DE VELOCIDADE: 
+                // Antes: len * 60 (muito lento). Agora: len * 10 (rápido).
+                // Máximo de 2.5s de typing para não travar.
+                let typingTime = (sentence.length * 10) + randomInt(100, 300);
+                if (typingTime > 2500) typingTime = 2500;
 
                 await makeRequest('POST', `/chat/sendPresence/${INSTANCE_NAME}`, {
                     number: remoteJid,
@@ -373,9 +378,9 @@ async function broadcastDailyWord(force = false) {
         try {
             console.log(`🕊️ Pastoreando ${remoteJid}...`);
             
-            // Simula 'digitando'
-            await makeRequest('POST', `/chat/sendPresence/${INSTANCE_NAME}`, { number: remoteJid, presence: 'composing', delay: 5000 });
-            await sleep(3000);
+            // Simula 'digitando' (Mais rápido: 2s)
+            await makeRequest('POST', `/chat/sendPresence/${INSTANCE_NAME}`, { number: remoteJid, presence: 'composing', delay: 2000 });
+            await sleep(1000);
 
             // Gera a mensagem
             // Usamos uma "persona" genérica "Filho(a)" aqui, mas o ideal seria salvar o nome
