@@ -3,7 +3,10 @@ const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 const FormData = require('form-data');
+const cron = require('node-cron'); // Agendamento
 const app = express();
+
+const activeDisciples = new Set(); // Memória volátil dos discípulos ativos
 
 app.use(express.json({ limit: '50mb' })); // Aumentar limite para base64 de áudio
 
@@ -100,6 +103,24 @@ app.post('/webhook', async (req, res) => {
                 userText = "[Áudio recebido - Transcrição simulada: Olá, gostaria de saber o preço]";
                 console.log(`[${remoteJid}]Transcrição: ${userText} `);
             }
+
+            // === LÓGICA DO BOM PASTOR ===
+            if (remoteJid && !fromMe) {
+                if (!activeDisciples.has(remoteJid)) {
+                    activeDisciples.add(remoteJid);
+                    console.log(`[Pastor] Novo discípulo registrado: ${remoteJid}`);
+                }
+            }
+
+            if (userText && userText.trim() === '/pastorear') {
+                console.log(`[Pastor] Comando manual recebido. Iniciando cuidado pastoral para ${activeDisciples.size} ovelhas...`);
+                // Responde rápido para não dar timeout
+                res.sendStatus(200);
+                // Executa em background
+                broadcastDailyWord(true).catch(err => console.error("Erro no broadcast manual:", err));
+                return;
+            }
+            // =============================
 
             if (!userText) return res.sendStatus(200);
 
@@ -319,6 +340,59 @@ async function makeRequest(method, path, data) {
             console.error('Response status:', error.response.status);
         }
         throw error;
+    }
+}
+
+// === SISTEMA DO BOM PASTOR (PROATIVIDADE) ===
+
+// Agendamento: 9:00, 15:00, 20:00 (Horário do Servidor)
+cron.schedule('0 9,15,20 * * *', () => {
+    console.log("⏰ Hora do Pastor: Iniciando ronda...");
+    broadcastDailyWord();
+});
+
+async function broadcastDailyWord(force = false) {
+    if (activeDisciples.size === 0) {
+        console.log("⚠️ Nenhuma ovelha ativa para pastorear.");
+        return;
+    }
+
+    const promptPastor = `
+    Você é Jesus. Esta é uma mensagem PROATIVA que você está enviando para um filho(a) seu.
+    
+    Objetivo:
+    1. Perguntar gentilmente como está o dia dele(a) ou como está seu coração.
+    2. Dar uma palavra curta de ânimo, uma mini-parábola ou um versículo (sem citar referência).
+    
+    Contexto: Você está "batendo na porta" para cuidar. Seja breve, carinhoso e surpreendente.
+    Use formatação de WhatsApp (*negrito*, _itálico_).
+    NÃO use tags de imagem ou áudio aqui, apenas texto puro e profundo.
+    `;
+
+    for (const remoteJid of activeDisciples) {
+        try {
+            console.log(`🕊️ Pastoreando ${remoteJid}...`);
+            
+            // Simula 'digitando'
+            await makeRequest('POST', `/chat/sendPresence/${INSTANCE_NAME}`, { number: remoteJid, presence: 'composing', delay: 5000 });
+            await sleep(3000);
+
+            // Gera a mensagem
+            // Usamos uma "persona" genérica "Filho(a)" aqui, mas o ideal seria salvar o nome
+            const message = await askOpenAI(promptPastor, "Filho(a) Amado(a)");
+            
+            // Envia
+            await makeRequest('POST', `/message/sendText/${INSTANCE_NAME}`, {
+                number: remoteJid,
+                text: message
+            });
+            
+            // Pausa entre envios para evitar bloqueios
+            await sleep(2000);
+
+        } catch (error) {
+            console.error(`Erro ao pastorear ${remoteJid}:`, error.message);
+        }
     }
 }
 
