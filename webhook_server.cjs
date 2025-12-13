@@ -112,8 +112,10 @@ async function processInteraction(remoteJid, message, userText, isAudioReply, us
 
         // C. Presença (Digitando ou Gravando)
         const presenceType = isAudioReply ? 'recording' : 'composing';
-        await makeRequest('POST', `/instance/setPresence/${INSTANCE_NAME}`, {
-            presence: presenceType, delay: 2000
+        await makeRequest('POST', `/chat/sendPresence/${INSTANCE_NAME}`, {
+            number: remoteJid,
+            presence: presenceType, 
+            delay: 2000
         });
 
         // D. Pensar (OpenAI)
@@ -140,7 +142,11 @@ async function processInteraction(remoteJid, message, userText, isAudioReply, us
         if (isAudioReply) {
             // ... lógica de áudio
             console.log(`[${remoteJid}] Gerando áudio de resposta...`);
-            await makeRequest('POST', `/instance/setPresence/${INSTANCE_NAME}`, { presence: 'recording', delay: finalText.length * 100 });
+            await makeRequest('POST', `/chat/sendPresence/${INSTANCE_NAME}`, { 
+                number: remoteJid,
+                presence: 'recording', 
+                delay: finalText.length * 100 
+            });
             await sleep(finalText.length * 50);
 
             const audioBuffer = await generateAudio(finalText);
@@ -160,7 +166,8 @@ async function processInteraction(remoteJid, message, userText, isAudioReply, us
                 const sentence = sentences[i];
                 const typingTime = (sentence.length * 60) + randomInt(500, 1000);
 
-                await makeRequest('POST', `/instance/setPresence/${INSTANCE_NAME}`, {
+                await makeRequest('POST', `/chat/sendPresence/${INSTANCE_NAME}`, {
+                    number: remoteJid,
                     presence: 'composing',
                     delay: typingTime
                 });
