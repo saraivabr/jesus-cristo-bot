@@ -1504,9 +1504,9 @@ export function closeDatabase() {
  */
 export function saveCallLog(jid, callData) {
     return safeOperation(() => {
-        const userId = getOrCreateUsuario(jid)?.id;
-        if (!userId) {
-            throw new Error('Usuário não encontrado');
+        const usuario = getOrCreateUsuario(jid);
+        if (!usuario || !usuario.id) {
+            throw new Error('Usuário não encontrado ou inválido');
         }
 
         const stmt = db.prepare(`
@@ -1522,7 +1522,7 @@ export function saveCallLog(jid, callData) {
         `);
 
         return stmt.run(
-            userId,
+            usuario.id,
             callData.callId,
             callData.duration,
             callData.messageCount,
@@ -1537,8 +1537,8 @@ export function saveCallLog(jid, callData) {
  */
 export function getCallLogs(jid, limit = 10) {
     return safeOperation(() => {
-        const userId = getOrCreateUsuario(jid)?.id;
-        if (!userId) return [];
+        const usuario = getOrCreateUsuario(jid);
+        if (!usuario || !usuario.id) return [];
 
         const stmt = db.prepare(`
             SELECT * FROM call_logs 
@@ -1547,7 +1547,7 @@ export function getCallLogs(jid, limit = 10) {
             LIMIT ?
         `);
 
-        return stmt.all(userId, limit).map(row => ({
+        return stmt.all(usuario.id, limit).map(row => ({
             ...row,
             conversation: JSON.parse(row.conversation_json || '[]')
         }));

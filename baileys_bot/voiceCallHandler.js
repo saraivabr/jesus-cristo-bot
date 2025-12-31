@@ -10,7 +10,7 @@
  * - Logs de chamadas para análise posterior
  */
 
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { writeFile, readFile, unlink } from 'fs/promises';
@@ -27,7 +27,7 @@ const execAsync = promisify(exec);
 // ═══════════════════════════════════════════════════════════════
 
 // Gemini AI client
-const ai = new GoogleGenAI({ apiKey: config.GEMINI_API_KEY });
+const ai = new GoogleGenerativeAI(config.GEMINI_API_KEY);
 
 // Voice synthesis tool (edge-tts)
 const EDGE_TTS_PATH = process.env.EDGE_TTS_PATH || 'edge-tts';
@@ -199,7 +199,8 @@ Lembre-se: Esta é uma conversa falada, então seja natural e conversacional.`;
             console.log(`[VoiceCall] Sintetizando fala: "${text.substring(0, 50)}..."`);
 
             // Criar arquivo temporário
-            const tempId = `tts_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            const tempId = `tts_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+            const tempTextFile = join(tmpdir(), `${tempId}.txt`);
             const tempAudioFile = join(tmpdir(), `${tempId}.mp3`);
 
             // Limpar texto para TTS (remover markdown, etc)
@@ -210,14 +211,17 @@ Lembre-se: Esta é uma conversa falada, então seja natural e conversacional.`;
                 .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1')
                 .trim();
 
-            // Construir comando edge-tts
+            // Escrever texto em arquivo temporário (mais seguro que passar como argumento)
+            await writeFile(tempTextFile, cleanText, 'utf-8');
+
+            // Construir comando edge-tts usando arquivo de texto
             const command = [
                 EDGE_TTS_PATH,
-                `--voice "${VOICE_CONFIG.voice}"`,
-                `--rate "${VOICE_CONFIG.rate}"`,
-                `--pitch "${VOICE_CONFIG.pitch}"`,
-                `--text "${cleanText.replace(/"/g, '\\"')}"`,
-                `--write-media "${tempAudioFile}"`
+                `--voice ${VOICE_CONFIG.voice}`,
+                `--rate ${VOICE_CONFIG.rate}`,
+                `--pitch ${VOICE_CONFIG.pitch}`,
+                `--file ${tempTextFile}`,
+                `--write-media ${tempAudioFile}`
             ].join(' ');
 
             // Executar TTS
@@ -234,11 +238,12 @@ Lembre-se: Esta é uma conversa falada, então seja natural e conversacional.`;
             // Ler arquivo
             const audioBuffer = await readFile(tempAudioFile);
 
-            // Limpar arquivo temporário
+            // Limpar arquivos temporários
             try {
+                await unlink(tempTextFile);
                 await unlink(tempAudioFile);
             } catch (err) {
-                console.warn('[VoiceCall] Não foi possível limpar arquivo temp:', err.message);
+                console.warn('[VoiceCall] Não foi possível limpar arquivos temp:', err.message);
             }
 
             return audioBuffer;
