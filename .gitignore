@@ -3,3 +3,7 @@ node_modules/
 .DS_Store
 *.log
 online_status.json
+baileys_bot/auth_session/
+baileys_bot/data/
+baileys_bot/logs/
+baileys_bot/.env

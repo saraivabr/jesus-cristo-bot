@@ -1,0 +1,35 @@
+{
+  "name": "jesus-pastoral-bot",
+  "version": "2.0.0",
+  "description": "Jesus Cristo - O Bom Pastor Digital | WhatsApp Bot com Baileys + Gemini",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.21.0",
+    "@hapi/boom": "^10.0.1",
+    "@whiskeysockets/baileys": "^7.0.0-rc.9",
+    "better-sqlite3": "^11.7.0",
+    "dotenv": "^16.4.7",
+    "node-cache": "^5.1.2",
+    "node-cron": "^3.0.3",
+    "pino": "^9.6.0",
+    "qrcode-terminal": "^0.12.0"
+  },
+  "engines": {
+    "node": ">=20.x"
+  },
+  "keywords": [
+    "whatsapp",
+    "baileys",
+    "bot",
+    "gemini",
+    "jesus",
+    "pastoral"
+  ],
+  "author": "Sistema Jesus Cristo",
+  "license": "MIT"
+}
