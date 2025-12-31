@@ -1,18 +1,24 @@
 {
-  "name": "jesus-divine-agent",
-  "version": "1.0.0",
-  "description": "Jesus Agent Webhook Server",
-  "main": "webhook_server.cjs",
+  "name": "jesus-pastoral-bot",
+  "version": "2.0.0",
+  "description": "Jesus Cristo - O Bom Pastor Digital | WhatsApp Bot",
+  "main": "baileys_bot/indexScalingo.js",
   "scripts": {
-    "start": "node webhook_server.cjs"
-  },
-  "dependencies": {
-    "axios": "^1.6.2",
-    "express": "^4.18.2",
-    "form-data": "^4.0.0",
-    "node-cron": "^4.2.1"
+    "start": "cd baileys_bot && node indexScalingo.js",
+    "dev": "cd baileys_bot && node --watch index.js",
+    "migrate": "cd baileys_bot && node scripts/migrate.js",
+    "postinstall": "cd baileys_bot && npm install"
   },
   "engines": {
-    "node": "20.x"
-  }
+    "node": ">=20.x"
+  },
+  "keywords": [
+    "whatsapp",
+    "baileys",
+    "bot",
+    "gemini",
+    "jesus"
+  ],
+  "author": "Sistema Jesus Cristo",
+  "license": "MIT"
 }

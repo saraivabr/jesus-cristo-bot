@@ -1,0 +1,16 @@
+{
+  "name": "jesus-pastoral-bot",
+  "description": "Jesus Cristo - O Bom Pastor Digital | WhatsApp Bot",
+  "env": {
+    "GEMINI_API_KEY": {
+      "description": "Chave da API do Google Gemini",
+      "required": true
+    },
+    "NODE_ENV": {
+      "value": "production"
+    }
+  },
+  "scripts": {
+    "postdeploy": "cd baileys_bot && npm run migrate"
+  }
+}
