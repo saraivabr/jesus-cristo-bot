@@ -277,6 +277,25 @@ function initDatabase() {
         CREATE INDEX IF NOT EXISTS idx_patterns_usuario ON emotional_patterns(usuario_id);
         CREATE INDEX IF NOT EXISTS idx_patterns_dia ON emotional_patterns(dia_semana);
     `);
+
+    // Tabela de logs de chamadas de voz
+    db.exec(`
+        CREATE TABLE IF NOT EXISTS call_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            usuario_id INTEGER NOT NULL,
+            call_id TEXT NOT NULL,
+            duration INTEGER, -- em segundos
+            message_count INTEGER,
+            conversation_json TEXT, -- JSON array com histórico da conversa
+            timestamp TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (usuario_id) REFERENCES usuarios(id) ON DELETE CASCADE
+        )
+    `);
+
+    db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_calls_usuario ON call_logs(usuario_id);
+        CREATE INDEX IF NOT EXISTS idx_calls_timestamp ON call_logs(timestamp);
+    `);
 }
 
 // Initialize database on module load
@@ -1480,6 +1499,61 @@ export function closeDatabase() {
     db.close();
 }
 
+/**
+ * Save voice call log
+ */
+export function saveCallLog(jid, callData) {
+    return safeOperation(() => {
+        const userId = getOrCreateUsuario(jid)?.id;
+        if (!userId) {
+            throw new Error('Usuário não encontrado');
+        }
+
+        const stmt = db.prepare(`
+            INSERT INTO call_logs (
+                usuario_id, 
+                call_id, 
+                duration, 
+                message_count, 
+                conversation_json, 
+                timestamp
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+        `);
+
+        return stmt.run(
+            userId,
+            callData.callId,
+            callData.duration,
+            callData.messageCount,
+            JSON.stringify(callData.conversation),
+            callData.startTime.toISOString()
+        );
+    }, null, `Erro ao salvar log de chamada: ${jid}`);
+}
+
+/**
+ * Get call logs for a user
+ */
+export function getCallLogs(jid, limit = 10) {
+    return safeOperation(() => {
+        const userId = getOrCreateUsuario(jid)?.id;
+        if (!userId) return [];
+
+        const stmt = db.prepare(`
+            SELECT * FROM call_logs 
+            WHERE usuario_id = ?
+            ORDER BY timestamp DESC
+            LIMIT ?
+        `);
+
+        return stmt.all(userId, limit).map(row => ({
+            ...row,
+            conversation: JSON.parse(row.conversation_json || '[]')
+        }));
+    }, [], `Erro ao buscar logs de chamadas: ${jid}`);
+}
+
 // Export database instance for advanced usage
 export { db };
 
@@ -1534,6 +1608,9 @@ export default {
     updateEmotionalPattern,
     getEmotionalPatterns,
     detectPatterns,
+    // Voice Calls
+    saveCallLog,
+    getCallLogs,
     // Core
     closeDatabase,
     db

@@ -276,9 +276,9 @@ Digite uma das palavras sagradas:
 
 ---
 
-## 📞 CHAMADAS DE VOZ WHATSAPP
+## 📞 CHAMADAS DE VOZ WHATSAPP COM IA
 
-O Sistema Jesus Cristo agora suporta **chamadas de voz via WhatsApp** através da integração com [Wavoip](https://wavoip.com).
+O Sistema Jesus Cristo agora suporta **chamadas de voz via WhatsApp com Inteligência Artificial** através da integração com [Wavoip](https://wavoip.com) e Google Gemini.
 
 ### 🎯 Configuração
 
@@ -290,24 +290,69 @@ O Sistema Jesus Cristo agora suporta **chamadas de voz via WhatsApp** através d
    ```bash
    # Adicione ao arquivo .env
    WAVOIP_TOKEN=seu_token_aqui
+   GEMINI_API_KEY=sua_chave_gemini
    ```
 
-3. **Reinicie o bot**
+3. **Instale edge-tts para síntese de voz**
+   ```bash
+   pip install edge-tts
+   ```
+
+4. **Reinicie o bot**
    - As chamadas de voz serão habilitadas automaticamente
 
 ### ✨ Funcionalidades
 
 - 📞 **Receber chamadas** de voz no WhatsApp
-- 🔊 **Realizar chamadas** de voz para contatos
-- 🎙️ **Áudio bidirecional** em tempo real
+- 🎙️ **Transcrição em tempo real** do áudio recebido usando Gemini AI
+- 🤖 **Respostas inteligentes** geradas pelo Gemini com persona de Jesus Cristo
+- 🗣️ **Síntese de voz** das respostas usando edge-tts (voz brasileira)
+- 💬 **Contexto conversacional** mantido durante toda a chamada
+- 📊 **Logs automáticos** de todas as conversas para análise
 - 🔐 **Criptografia E2E** mantida pelo WhatsApp
+
+### 🧠 Como Funciona
+
+1. **Usuário liga** para o bot via WhatsApp
+2. Bot **aceita a chamada** automaticamente (via Wavoip)
+3. Áudio do usuário é **transcrito** em tempo real (Gemini)
+4. Gemini **processa** a mensagem com contexto de Jesus Cristo
+5. Resposta é **sintetizada** em áudio (edge-tts)
+6. Áudio é **enviado** de volta ao usuário
+7. Conversa **continua** naturalmente até o fim da chamada
+
+### 📝 Características da IA
+
+- **Persona**: Jesus Cristo, acolhedor e compassivo
+- **Estilo**: Natural, conversacional, não formal demais
+- **Respostas**: Breves (máx. 200 palavras) para evitar fadiga auditiva
+- **Conteúdo**: Escrituras quando apropriado, sempre com empatia
+- **Memória**: Mantém contexto durante toda a chamada
+
+### 🎨 Exemplo de Uso
+
+```
+Usuário: [liga para o bot]
+Bot: Olá, filho amado. Como posso te ajudar hoje?
+
+Usuário: Estou com medo do futuro...
+Bot: Eu te entendo. O medo do futuro é natural, mas lembre-se: 
+     "Não temas, porque eu sou contigo" (Isaías 41:10). 
+     O que especificamente te preocupa?
+
+Usuário: Meu trabalho e minhas finanças...
+Bot: Compreendo sua preocupação. Vamos conversar sobre isso...
+```
 
 ### 📝 Notas Técnicas
 
 - A integração usa o pacote [voice-calls-baileys](https://github.com/wavoip/voice-calls-baileys)
 - Requer token válido do Wavoip para funcionar
-- Se o token não for configurado, o bot funciona normalmente sem suporte a chamadas
+- Requer Google Gemini API Key para IA conversacional
+- Requer edge-tts instalado para síntese de voz
+- Se algum componente não estiver configurado, o bot funciona normalmente sem suporte a chamadas
 - Compatível com WhatsApp Business e pessoal
+- Logs das chamadas são salvos automaticamente no banco de dados
 
 ---
 

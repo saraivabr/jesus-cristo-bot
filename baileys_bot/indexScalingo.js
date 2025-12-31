@@ -85,6 +85,7 @@ import * as humanizer from './humanizer.js';
 import * as memoria from './memoria.js';
 import * as tts from './tts.js';
 import * as scheduler from './scheduler.js';
+import * as voiceCallHandler from './voiceCallHandler.js';
 import teachingEngine from './core/teachingEngine.js';
 import { detectarNivel, gerarContextoNivel } from './prompts/jornada.js';
 import * as audioProcessor from './audioProcessor.js';
@@ -739,6 +740,16 @@ async function connectToWhatsApp() {
             await saveCreds();
         }
 
+        // ═══════════════════════════════════════════════════════════════
+        // VOICE CALLS - Eventos de Chamada
+        // ═══════════════════════════════════════════════════════════════
+        if (events['call']) {
+            const calls = events['call'];
+            for (const call of calls) {
+                await handleVoiceCall(call);
+            }
+        }
+
         if (events['messages.upsert']) {
             const { messages, type } = events['messages.upsert'];
             if (type !== 'notify') return;
@@ -761,6 +772,62 @@ async function connectToWhatsApp() {
     });
 
     return sock;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PROCESSAMENTO DE CHAMADAS DE VOZ
+// ═══════════════════════════════════════════════════════════════
+
+async function handleVoiceCall(call) {
+    try {
+        const { from, id, status, isVideo, isGroup } = call;
+        
+        console.log(`📞 [VoiceCall] Evento de chamada: ${status}`);
+        console.log(`   De: ${from}`);
+        console.log(`   ID: ${id}`);
+        console.log(`   Vídeo: ${isVideo ? 'Sim' : 'Não'}`);
+        console.log(`   Grupo: ${isGroup ? 'Sim' : 'Não'}`);
+
+        // Ignorar chamadas de grupo
+        if (isGroup) {
+            console.log('   ℹ️  Chamadas de grupo não são suportadas');
+            return;
+        }
+
+        // Processar de acordo com o status
+        switch (status) {
+            case 'offer':
+                // Chamada recebida
+                console.log('   📥 Chamada recebida - iniciando sessão AI');
+                await voiceCallHandler.startCall(id, from);
+                break;
+
+            case 'ringing':
+                console.log('   📞 Chamada tocando...');
+                break;
+
+            case 'timeout':
+                console.log('   ⏱️  Chamada expirou');
+                await voiceCallHandler.endCall(id);
+                break;
+
+            case 'reject':
+                console.log('   ❌ Chamada rejeitada');
+                await voiceCallHandler.endCall(id);
+                break;
+
+            case 'accept':
+                console.log('   ✅ Chamada aceita');
+                // A chamada foi aceita, o áudio será processado via eventos do Wavoip
+                break;
+
+            default:
+                console.log(`   ℹ️  Status desconhecido: ${status}`);
+        }
+
+    } catch (error) {
+        console.error('[VoiceCall] Erro ao processar chamada:', error);
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════
