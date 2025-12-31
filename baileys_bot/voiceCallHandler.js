@@ -11,7 +11,7 @@
  */
 
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { writeFile, readFile, unlink } from 'fs/promises';
 import { existsSync, mkdirSync } from 'fs';
@@ -20,7 +20,7 @@ import { tmpdir } from 'os';
 import config from './config.js';
 import * as db from './database.js';
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 // ═══════════════════════════════════════════════════════════════
 // CONFIGURAÇÃO
@@ -29,8 +29,23 @@ const execAsync = promisify(exec);
 // Gemini AI client
 const ai = new GoogleGenerativeAI(config.GEMINI_API_KEY);
 
-// Voice synthesis tool (edge-tts)
-const EDGE_TTS_PATH = process.env.EDGE_TTS_PATH || 'edge-tts';
+// Voice synthesis tool (edge-tts) - validate path to prevent command injection
+const ALLOWED_TTS_PATHS = [
+    'edge-tts',
+    '/usr/local/bin/edge-tts',
+    '/usr/bin/edge-tts',
+    '/opt/homebrew/bin/edge-tts'
+];
+
+const EDGE_TTS_PATH = (() => {
+    const envPath = process.env.EDGE_TTS_PATH || 'edge-tts';
+    // Only allow whitelisted paths or simple command names (no special characters)
+    if (ALLOWED_TTS_PATHS.includes(envPath) || /^[a-z0-9\-]+$/.test(envPath)) {
+        return envPath;
+    }
+    console.warn(`[VoiceCall] EDGE_TTS_PATH inválido: ${envPath}, usando padrão`);
+    return 'edge-tts';
+})();
 
 // Voice settings for Jesus Cristo persona
 const VOICE_CONFIG = {
@@ -39,6 +54,9 @@ const VOICE_CONFIG = {
     pitch: '+0Hz',                  // Tom normal
     volume: '+0%'                   // Volume normal
 };
+
+// Maximum response length for TTS (to avoid too long audio responses)
+const MAX_RESPONSE_LENGTH = 600; // ~200 words in Portuguese
 
 // Active calls storage
 const activeCalls = new Map();
@@ -181,9 +199,8 @@ Lembre-se: Esta é uma conversa falada, então seja natural e conversacional.`;
             const response = result.response.text();
 
             // Limitar tamanho da resposta (importante para áudio)
-            const maxLength = 600; // ~200 palavras em português
-            if (response.length > maxLength) {
-                return response.substring(0, maxLength) + '...';
+            if (response.length > MAX_RESPONSE_LENGTH) {
+                return response.substring(0, MAX_RESPONSE_LENGTH) + '...';
             }
 
             return response;
@@ -214,18 +231,17 @@ Lembre-se: Esta é uma conversa falada, então seja natural e conversacional.`;
             // Escrever texto em arquivo temporário (mais seguro que passar como argumento)
             await writeFile(tempTextFile, cleanText, 'utf-8');
 
-            // Construir comando edge-tts usando arquivo de texto
-            const command = [
-                EDGE_TTS_PATH,
-                `--voice ${VOICE_CONFIG.voice}`,
-                `--rate ${VOICE_CONFIG.rate}`,
-                `--pitch ${VOICE_CONFIG.pitch}`,
-                `--file ${tempTextFile}`,
-                `--write-media ${tempAudioFile}`
-            ].join(' ');
+            // Construir argumentos para edge-tts de forma segura usando execFile
+            const args = [
+                '--voice', VOICE_CONFIG.voice,
+                '--rate', VOICE_CONFIG.rate,
+                '--pitch', VOICE_CONFIG.pitch,
+                '--file', tempTextFile,
+                '--write-media', tempAudioFile
+            ];
 
-            // Executar TTS
-            await execAsync(command, {
+            // Executar TTS usando execFile (mais seguro que exec)
+            await execFileAsync(EDGE_TTS_PATH, args, {
                 timeout: 30000,
                 maxBuffer: 10 * 1024 * 1024
             });
@@ -383,7 +399,7 @@ export function getActiveCalls() {
  */
 export async function checkTTSAvailability() {
     try {
-        await execAsync(`${EDGE_TTS_PATH} --version`, { timeout: 5000 });
+        await execFileAsync(EDGE_TTS_PATH, ['--version'], { timeout: 5000 });
         return true;
     } catch (error) {
         console.warn('[VoiceCall] edge-tts não disponível:', error.message);
