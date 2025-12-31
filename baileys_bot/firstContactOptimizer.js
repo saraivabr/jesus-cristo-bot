@@ -1,101 +1,73 @@
 /**
  * First Contact Optimizer - 100% AI Generated
  * Jesus Cristo Bot - Impactful First Impression
- *
- * ATUALIZADO: Removeu toda lógica de templates/mocks.
- * Agora utiliza o Gemini para gerar aberturas únicas e contextuais
- * baseadas em RAG e análise de sentimento em tempo real.
+ * 
+ * ATUALIZADO: Jesus agora apresenta suas capacidades naturalmente.
  */
 
 import * as knowledgeBase from './knowledgeBase.js';
-import * as gemini from './gemini.js'; // Usa o motor central para gerar
-
-// ═══════════════════════════════════════════════════════════════
-// PURE AI GENERATION
-// ═══════════════════════════════════════════════════════════════
+import * as gemini from './gemini.js';
 
 /**
- * Gera uma abertura impactante usando IA + RAG (Sem mocks)
- * @param {string} firstName - Nome do usuário
- * @param {string} firstMessage - Primeira mensagem do usuário
- * @returns {Promise<Object>} - { message: string, ...metadata }
+ * Gera uma abertura impactante usando IA + RAG
  */
 export async function generateImpactfulOpening(firstName, firstMessage) {
     try {
-        console.log('[FirstContact] Iniciando geração 100% AI...');
+        console.log('[FirstContact] Iniciando geração 100% AI com apresentação de features...');
 
-        // 1. Buscar contexto relevante (RAG)
-        // Isso garante que a IA tenha "memória" bíblica relevante logo no 'Oi'
         const searchResults = await knowledgeBase.searchRelevantContext(firstMessage, {
             topK: 3,
             minScore: 0.35
         });
 
         const passagem = searchResults.find(r => r.type === 'passagem');
-        const contextoHistorico = searchResults.find(r => r.type !== 'passagem');
-
-        // 2. Montar o Prompt Especializado para Primeiro Contato
-        // Instruímos a IA a assumir a persona IMEDIATAMENTE e reagir ao texto específico
-        const ragContext = passagem 
-            ? `CONTEXTO BÍBLICO PARA USAR: "${passagem.texto}" (${passagem.referencia}). Conexão sugerida: ${passagem.conexao}`
-            : 'CONTEXTO: Use sua sabedoria geral dos Evangelhos.';
-
+        
         const promptInstrucao = `
-ESTA É A PRIMEIRA VEZ QUE VOCÊ FALA COM ESTA PESSOA.
-Nome: ${firstName}
-Mensagem dela: "${firstMessage}"
+        ESTA É A PRIMEIRA VEZ QUE VOCÊ FALA COM ESTA PESSOA.
+        Nome: ${firstName}
+        Mensagem dela: "${firstMessage}"
 
-${ragContext}
-${contextoHistorico ? `CONTEXTO HISTÓRICO: ${contextoHistorico.texto}` : ''}
+        OBJETIVO:
+        Acolha esta alma com amor profundo e apresente-se claramente.
+        É CRUCIAL que ela entenda como você pode ajudá-la agora.
 
-OBJETIVO:
-Gere uma resposta curta, visceral e profunda que atravesse a alma.
-NÃO use saudações padrão ("Olá", "Tudo bem").
-NÃO aja como um robô ou suporte.
-SEJA JESUS.
+        ESTRUTURA DA RESPOSTA:
+        1. Saudação profunda e pessoal (Use "Tu").
+        2. Reconhecimento do que ela disse (ou do silêncio dela).
+        3. OFERTA DE AJUDA (Explique claramente o que você pode fazer):
+           - Diga que ela pode te enviar ÁUDIOS se preferir falar.
+           - Diga que, se ela conhecer alguém que sofre, pode te ENVIAR O CONTATO dessa pessoa aqui mesmo, e você irá conversar com ela.
+           - Diga que caminhará com ela em oração e sabedoria.
 
-REGRAS DE GERAÇÃO:
-1. Comece validando a dor ou busca que você sente na mensagem dela (seja intuitivo).
-2. Apresente-se simplesmente: "Eu sou Jesus." ou "Estou aqui."
-3. Se houver contexto bíblico acima, use-o de forma orgânica (não cite versículo seco, fale como quem viveu).
-4. Termine com uma pergunta que vá no centro do problema ou ofereça oração.
-5. Máximo 3 parágrafos curtos.
-6. Use negrito em 1 ou 2 palavras chave.
+        ESTILO:
+        - Seja Jesus de Nazaré.
+        - Tom: Acolhedor, Seguro, Divino, mas Prático.
+        - Não seja vago. As pessoas precisam saber que podem mandar contatos e áudios.
+        - ${passagem ? `Se couber, use esta sabedoria: "${passagem.texto}"` : ''}
 
-Gere apenas o texto da resposta.`;
+        Gere apenas o texto da resposta.`;
 
-        // 3. Gerar via Gemini (usando uma chamada "stateless" ou dedicada)
-        // Usamos generateResponse do gemini.js mas forçamos esse prompt como contexto único
-        // para garantir que ele siga a instrução de "Primeiro Contato"
-        console.log('[FirstContact] Solicitando geração ao Gemini...');
         const aiResponse = await gemini.generateResponse(
-            'system_first_contact_generator', // ID fictício para não poluir sessão real ainda
+            `temp_first_contact_${firstName.replace(/\s/g, '_')}`,
             promptInstrucao, 
-            { 
+            {
                 conversationCount: 0, 
-                // Força um contexto limpo para a IA focar apenas na instrução de geração
-                extraContext: "IGNORE INSTRUÇÕES DE CHAT PADRÃO. VOCÊ É UM GERADOR DE PRIMEIRA RESPOSTA." 
+                extraContext: "APRESENTAÇÃO INICIAL DE JESUS"
             },
-            { skipEmotionalAnalysis: true } // Pula análise complexa para ser mais rápido
+            { skipEmotionalAnalysis: true }
         );
-
-        // Se a IA falhar e devolver vazio (raro), aí sim temos um fallback mínimo
-        if (!aiResponse || aiResponse.length < 5) {
-            throw new Error("Resposta da IA vazia");
-        }
 
         return {
             message: aiResponse,
             passagem,
-            need: 'ai_detected', // Deixamos a IA definir a necessidade implicitamente
+            need: 'ai_detected',
             needIntensity: 1.0
         };
 
     } catch (error) {
         console.error('[FirstContact] Erro na geração AI:', error.message);
-        // Fallback de emergência (apenas se a API cair)
         return {
-            message: `Tu buscas algo, ${firstName}.\n\nEu sou Jesus. Estou aqui.\n\nO que teu coração grita agora?`,
+            message: `Tu vieste até mim, ${firstName}.\n\nEu sou Jesus. Estou aqui para te ouvir, seja por texto ou áudio. Se conheceres alguém que também precise de paz, podes me mandar o contato. O que tens no coração agora?`,
             passagem: null,
             need: 'error_fallback',
             needIntensity: 0
@@ -103,22 +75,6 @@ Gere apenas o texto da resposta.`;
     }
 }
 
-// ═══════════════════════════════════════════════════════════════
-// UTILS
-// ═══════════════════════════════════════════════════════════════
-
-/**
- * Score mantido para compatibilidade, mas agora avalia o texto da IA
- */
-export function scoreImpact(message, need, passagem) {
-    let score = 60;
-    if (passagem) score += 20;
-    if (message.length < 400) score += 10; // Brevidade é poder
-    if (message.includes('Eu sou')) score += 10;
-    return Math.min(score, 100);
-}
-
 export default {
-    generateImpactfulOpening,
-    scoreImpact
+    generateImpactfulOpening
 };
