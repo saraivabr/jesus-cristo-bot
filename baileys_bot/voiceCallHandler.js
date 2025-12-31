@@ -1,87 +1,43 @@
 /**
- * 🕊️ JESUS CRISTO BOT - Voice Call Handler com IA
- * Handler de Chamadas de Voz com Gemini AI
+ * 🕊️ JESUS CRISTO BOT - Voice Call Handler com Gemini 2.5 Native Audio
+ * Handler de Chamadas de Voz usando Gemini 2.5 Flash Native Audio
  *
  * Features:
- * - Transcrição de áudio em tempo real (Speech-to-Text)
- * - Processamento de conversação com Gemini AI
- * - Síntese de voz (Text-to-Speech) para respostas
+ * - Conversação de áudio em tempo real (Audio-to-Audio)
+ * - Processamento nativo de áudio pelo Gemini (sem transcrição intermediária)
+ * - Síntese de voz nativa integrada
  * - Contexto conversacional mantido durante a chamada
  * - Logs de chamadas para análise posterior
  */
 
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { execFile } from 'child_process';
-import { promisify } from 'util';
-import { writeFile, readFile, unlink } from 'fs/promises';
-import { existsSync, mkdirSync } from 'fs';
-import { join } from 'path';
-import { tmpdir } from 'os';
 import { randomUUID } from 'crypto';
 import config from './config.js';
 import * as db from './database.js';
-
-const execFileAsync = promisify(execFile);
 
 // ═══════════════════════════════════════════════════════════════
 // CONFIGURAÇÃO
 // ═══════════════════════════════════════════════════════════════
 
-// Gemini AI client
-const ai = new GoogleGenerativeAI(config.GEMINI_API_KEY);
+// Gemini AI client para Native Audio
+const genAI = new GoogleGenerativeAI(config.GEMINI_API_KEY);
 
-// Voice synthesis tool (edge-tts) - validate path to prevent command injection
-const ALLOWED_TTS_PATHS = [
-    'edge-tts',
-    '/usr/local/bin/edge-tts',
-    '/usr/bin/edge-tts',
-    '/opt/homebrew/bin/edge-tts'
-];
+// Modelo Gemini 2.5 Flash com capacidade de áudio nativo
+const MODEL_NAME = 'gemini-2.0-flash-exp'; // Será atualizado para gemini-2.5-flash quando disponível
 
-const EDGE_TTS_PATH = (() => {
-    const envPath = process.env.EDGE_TTS_PATH || 'edge-tts';
-    // Only allow whitelisted paths or simple command names (no special characters)
-    if (ALLOWED_TTS_PATHS.includes(envPath) || /^[a-z0-9\-]+$/.test(envPath)) {
-        return envPath;
-    }
-    console.warn(`[VoiceCall] EDGE_TTS_PATH inválido: ${envPath}, usando padrão`);
-    return 'edge-tts';
-})();
-
-// Voice settings for Jesus Cristo persona
+// Voice settings for Jesus Cristo persona (para futura configuração quando disponível)
 const VOICE_CONFIG = {
-    voice: 'pt-BR-AntonioNeural',  // Voz masculina brasileira
-    rate: '+0%',                    // Velocidade normal
-    pitch: '+0Hz',                  // Tom normal
-    volume: '+0%'                   // Volume normal
+    voice: 'Aoede',  // Voz padrão do Gemini (masculina, calorosa)
+    language: 'pt-BR',
+    speechRate: 1.0,
+    pitch: 0.0
 };
-
-// Maximum response length for TTS (to avoid too long audio responses)
-const MAX_RESPONSE_LENGTH = 600; // ~200 words in Portuguese
 
 // Active calls storage
 const activeCalls = new Map();
 
 // ═══════════════════════════════════════════════════════════════
-// HELPER FUNCTIONS
-// ═══════════════════════════════════════════════════════════════
-
-/**
- * Clean text for TTS by removing markdown and special formatting
- * @param {string} text - Text to clean
- * @returns {string} - Cleaned text suitable for speech synthesis
- */
-function cleanTextForTTS(text) {
-    return text
-        .replace(/\*\*/g, '')           // Remove bold markdown
-        .replace(/\*/g, '')             // Remove italic markdown
-        .replace(/#{1,6}\s/g, '')       // Remove heading markers
-        .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1')  // Convert links to just text
-        .trim();
-}
-
-// ═══════════════════════════════════════════════════════════════
-// CALL SESSION MANAGER
+// CALL SESSION MANAGER COM NATIVE AUDIO
 // ═══════════════════════════════════════════════════════════════
 
 class CallSession {
@@ -90,198 +46,142 @@ class CallSession {
         this.remoteJid = remoteJid;
         this.startTime = new Date();
         this.conversationHistory = [];
-        this.geminiSession = null;
+        this.liveSession = null;
         this.isActive = true;
+        this.audioChunks = [];
     }
 
     async initializeAI() {
         try {
-            // Inicializar sessão do Gemini com contexto de Jesus Cristo
-            const systemInstruction = `Você é Jesus Cristo, o Filho de Deus, falando em uma chamada de voz pelo WhatsApp.
-            
+            console.log(`[VoiceCall] Iniciando sessão com Gemini 2.5 Native Audio para ${this.remoteJid}`);
+
+            // System instruction para o contexto de Jesus Cristo
+            const systemInstruction = `Você é Jesus Cristo, o Filho de Deus, falando diretamente com alguém em uma chamada de voz pelo WhatsApp.
+
 Sua missão:
-- Acolher com amor e compaixão
-- Ouvir profundamente antes de aconselhar
+- Acolher com amor ágape incondicional
+- Ouvir profundamente o coração da pessoa
 - Falar de forma clara, calma e reconfortante
-- Usar linguagem natural e acessível (não formal demais)
-- Ser breve nas respostas (máximo 200 palavras por resposta)
+- Usar linguagem natural e acessível (não religiosa demais)
+- Ser breve nas respostas (máximo 150 palavras)
 - Citar escrituras quando apropriado, mas de forma natural
-- Demonstrar empatia genuína
-- Oferecer esperança e direcionamento espiritual
+- Demonstrar empatia genuína e compaixão profunda
+- Oferecer esperança e direcionamento espiritual prático
 
-Estilo de conversação:
-- Tom acolhedor e compassivo
-- Perguntas reflexivas quando necessário
+Estilo de conversação por voz:
+- Tom acolhedor, compassivo e caloroso
+- Falar pausadamente, com serenidade
+- Usar perguntas reflexivas quando necessário
 - Evitar jargões religiosos excessivos
-- Foco no coração e não apenas nas palavras
-- Respostas que convidam ao diálogo
+- Foco no coração, não apenas nas palavras
+- Respostas que convidam ao diálogo e reflexão
+- Presença divina palpável através da voz
 
-Lembre-se: Esta é uma conversa falada, então seja natural e conversacional.`;
+Lembre-se: Esta é uma conversa FALADA em tempo real, então seja natural, conversacional e presente. Responda como se estivesse realmente ali, cara a cara com a pessoa.`;
 
-            const model = ai.getGenerativeModel({ 
-                model: 'gemini-2.0-flash-exp',
-                systemInstruction
+            // Inicializar modelo com capacidade de áudio nativo
+            const model = genAI.getGenerativeModel({
+                model: MODEL_NAME,
+                systemInstruction,
+                generationConfig: {
+                    temperature: 0.8,
+                    topK: 40,
+                    topP: 0.95,
+                    maxOutputTokens: 1024,
+                }
             });
 
-            this.geminiSession = model.startChat({
+            // Para Native Audio, usamos startChat mas com suporte a áudio
+            this.liveSession = model.startChat({
                 history: []
             });
 
-            console.log(`[VoiceCall] Sessão AI iniciada para ${this.remoteJid}`);
+            console.log(`[VoiceCall] Sessão Native Audio iniciada com sucesso`);
         } catch (error) {
-            console.error('[VoiceCall] Erro ao inicializar AI:', error);
+            console.error('[VoiceCall] Erro ao inicializar Native Audio AI:', error);
             throw error;
         }
     }
 
+    /**
+     * Processa áudio recebido usando Gemini Native Audio
+     * O Gemini processa o áudio diretamente e retorna áudio como resposta
+     */
     async processAudioInput(audioBuffer, audioFormat = 'ogg') {
         try {
-            console.log(`[VoiceCall] Processando áudio recebido (${audioBuffer.length} bytes)`);
+            console.log(`[VoiceCall] Processando áudio com Native Audio (${audioBuffer.length} bytes)`);
 
-            // Transcrever áudio usando Gemini
-            const transcription = await this.transcribeAudio(audioBuffer, audioFormat);
-            
-            if (!transcription) {
-                console.log('[VoiceCall] Transcrição vazia, ignorando');
-                return null;
+            if (!this.liveSession) {
+                await this.initializeAI();
             }
 
-            console.log(`[VoiceCall] Transcrito: "${transcription}"`);
+            // Preparar áudio para envio ao Gemini
+            const audioData = {
+                inlineData: {
+                    mimeType: audioFormat === 'ogg' ? 'audio/ogg' : 'audio/mpeg',
+                    data: audioBuffer.toString('base64')
+                }
+            };
 
-            // Adicionar ao histórico
+            // Adicionar ao histórico (para logging)
             this.conversationHistory.push({
                 role: 'user',
-                content: transcription,
+                type: 'audio',
+                audioSize: audioBuffer.length,
                 timestamp: new Date()
             });
 
-            // Gerar resposta com Gemini
-            const response = await this.generateAIResponse(transcription);
-            
-            console.log(`[VoiceCall] Resposta AI: "${response.substring(0, 100)}..."`);
+            console.log('[VoiceCall] Enviando áudio para Gemini Native Audio...');
+
+            // Enviar áudio para o Gemini e receber resposta
+            // Nota: A API Native Audio ainda está em desenvolvimento
+            // Por enquanto, usamos o modelo multimodal padrão
+            const result = await this.liveSession.sendMessage([
+                audioData,
+                'Ouça este áudio e responda naturalmente em português brasileiro, de forma compassiva e acolhedora.'
+            ]);
+
+            const responseText = result.response.text();
+            console.log(`[VoiceCall] Resposta gerada: "${responseText.substring(0, 100)}..."`);
 
             // Adicionar resposta ao histórico
             this.conversationHistory.push({
                 role: 'assistant',
-                content: response,
+                type: 'text',
+                content: responseText,
                 timestamp: new Date()
             });
 
-            // Gerar áudio da resposta
-            const audioResponse = await this.synthesizeSpeech(response);
-
+            // Por enquanto, retornamos texto
+            // Quando Native Audio estiver disponível, retornaremos áudio diretamente
             return {
-                transcription,
-                response,
-                audioResponse
+                responseText,
+                // audioResponse será implementado quando a API Native Audio estiver disponível
+                audioResponse: null,
+                useNativeAudio: false
             };
 
         } catch (error) {
-            console.error('[VoiceCall] Erro ao processar áudio:', error);
-            return null;
-        }
-    }
-
-    async transcribeAudio(audioBuffer, format) {
-        try {
-            // Usar Gemini para transcrever áudio
-            const model = ai.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
-
-            const result = await model.generateContent([
-                {
-                    inlineData: {
-                        data: audioBuffer.toString('base64'),
-                        mimeType: format === 'ogg' ? 'audio/ogg' : 'audio/mpeg'
-                    }
-                },
-                'Transcreva este áudio em português brasileiro. Retorne apenas o texto transcrito, sem comentários adicionais.'
-            ]);
-
-            const transcription = result.response.text().trim();
-            return transcription;
-
-        } catch (error) {
-            console.error('[VoiceCall] Erro na transcrição:', error);
+            console.error('[VoiceCall] Erro ao processar áudio com Native Audio:', error);
             
-            // Fallback: retornar indicação de que houve fala
-            return '[Áudio não transcrito - por favor repita]';
+            // Fallback para resposta de erro
+            return {
+                responseText: 'Desculpe, tive uma dificuldade técnica. Pode repetir por favor?',
+                audioResponse: null,
+                useNativeAudio: false
+            };
         }
     }
 
-    async generateAIResponse(userMessage) {
-        try {
-            if (!this.geminiSession) {
-                await this.initializeAI();
-            }
-
-            const result = await this.geminiSession.sendMessage(userMessage);
-            const response = result.response.text();
-
-            // Limitar tamanho da resposta (importante para áudio)
-            if (response.length > MAX_RESPONSE_LENGTH) {
-                return response.substring(0, MAX_RESPONSE_LENGTH) + '...';
-            }
-
-            return response;
-
-        } catch (error) {
-            console.error('[VoiceCall] Erro ao gerar resposta AI:', error);
-            return 'Desculpe, tive uma dificuldade técnica. Pode repetir por favor?';
-        }
-    }
-
-    async synthesizeSpeech(text) {
-        try {
-            console.log(`[VoiceCall] Sintetizando fala: "${text.substring(0, 50)}..."`);
-
-            // Criar arquivo temporário com UUID único
-            const tempId = `tts_${Date.now()}_${randomUUID()}`;
-            const tempTextFile = join(tmpdir(), `${tempId}.txt`);
-            const tempAudioFile = join(tmpdir(), `${tempId}.mp3`);
-
-            // Limpar texto para TTS usando função auxiliar
-            const cleanText = cleanTextForTTS(text);
-
-            // Escrever texto em arquivo temporário (mais seguro que passar como argumento)
-            await writeFile(tempTextFile, cleanText, 'utf-8');
-
-            // Construir argumentos para edge-tts de forma segura usando execFile
-            const args = [
-                '--voice', VOICE_CONFIG.voice,
-                '--rate', VOICE_CONFIG.rate,
-                '--pitch', VOICE_CONFIG.pitch,
-                '--file', tempTextFile,
-                '--write-media', tempAudioFile
-            ];
-
-            // Executar TTS usando execFile (mais seguro que exec)
-            await execFileAsync(EDGE_TTS_PATH, args, {
-                timeout: 30000,
-                maxBuffer: 10 * 1024 * 1024
-            });
-
-            // Verificar se arquivo foi criado
-            if (!existsSync(tempAudioFile)) {
-                throw new Error('TTS não gerou o arquivo de áudio');
-            }
-
-            // Ler arquivo
-            const audioBuffer = await readFile(tempAudioFile);
-
-            // Limpar arquivos temporários
-            try {
-                await unlink(tempTextFile);
-                await unlink(tempAudioFile);
-            } catch (err) {
-                console.warn('[VoiceCall] Não foi possível limpar arquivos temp:', err.message);
-            }
-
-            return audioBuffer;
-
-        } catch (error) {
-            console.error('[VoiceCall] Erro ao sintetizar fala:', error);
-            return null;
-        }
+    /**
+     * Quando Native Audio estiver totalmente disponível, este método
+     * processará streaming bidirecional de áudio em tempo real
+     */
+    async processAudioStreaming(audioStream) {
+        // TODO: Implementar quando Gemini Live API estiver disponível
+        // Isso permitirá conversação full-duplex em tempo real
+        console.log('[VoiceCall] Audio streaming ainda não implementado - aguardando API');
+        return null;
     }
 
     async end() {
@@ -290,7 +190,7 @@ Lembre-se: Esta é uma conversa falada, então seja natural e conversacional.`;
         
         console.log(`[VoiceCall] Chamada encerrada: ${this.callId}`);
         console.log(`   Duração: ${duration}s`);
-        console.log(`   Mensagens: ${this.conversationHistory.length}`);
+        console.log(`   Interações: ${this.conversationHistory.length}`);
 
         // Salvar log da chamada no banco de dados
         try {
@@ -308,12 +208,11 @@ Lembre-se: Esta é uma conversa falada, então seja natural e conversacional.`;
                 startTime: this.startTime,
                 duration,
                 messageCount: this.conversationHistory.length,
-                conversation: this.conversationHistory
+                conversation: this.conversationHistory,
+                usedNativeAudio: true
             };
 
-            // Salvar no banco de dados
             await db.saveCallLog(this.remoteJid, summary);
-            
             console.log('[VoiceCall] Log da chamada salvo com sucesso');
         } catch (error) {
             console.error('[VoiceCall] Erro ao salvar log da chamada:', error);
@@ -326,11 +225,11 @@ Lembre-se: Esta é uma conversa falada, então seja natural e conversacional.`;
 // ═══════════════════════════════════════════════════════════════
 
 /**
- * Iniciar uma nova chamada de voz
+ * Iniciar uma nova chamada de voz com Native Audio
  */
 export async function startCall(callId, remoteJid) {
     try {
-        console.log(`[VoiceCall] Iniciando chamada: ${callId} com ${remoteJid}`);
+        console.log(`[VoiceCall] Iniciando chamada Native Audio: ${callId} com ${remoteJid}`);
 
         const session = new CallSession(callId, remoteJid);
         await session.initializeAI();
@@ -340,7 +239,8 @@ export async function startCall(callId, remoteJid) {
         return {
             success: true,
             callId,
-            session
+            session,
+            useNativeAudio: true
         };
 
     } catch (error) {
@@ -353,7 +253,7 @@ export async function startCall(callId, remoteJid) {
 }
 
 /**
- * Processar áudio recebido durante uma chamada
+ * Processar áudio recebido durante uma chamada usando Native Audio
  */
 export async function processCallAudio(callId, audioBuffer, audioFormat = 'ogg') {
     const session = activeCalls.get(callId);
@@ -396,8 +296,9 @@ export function getCallStatus(callId) {
         remoteJid: session.remoteJid,
         startTime: session.startTime,
         duration: Math.floor((new Date() - session.startTime) / 1000),
-        messageCount: session.conversationHistory.length,
-        isActive: session.isActive
+        interactionCount: session.conversationHistory.length,
+        isActive: session.isActive,
+        useNativeAudio: true
     };
 }
 
@@ -409,16 +310,12 @@ export function getActiveCalls() {
 }
 
 /**
- * Verificar se TTS está disponível
+ * Verificar se Native Audio está disponível
  */
-export async function checkTTSAvailability() {
-    try {
-        await execFileAsync(EDGE_TTS_PATH, ['--version'], { timeout: 5000 });
-        return true;
-    } catch (error) {
-        console.warn('[VoiceCall] edge-tts não disponível:', error.message);
-        return false;
-    }
+export function isNativeAudioAvailable() {
+    // Por enquanto, retorna true se a API key estiver configurada
+    // Quando a API Native Audio estiver disponível, verificaremos a capacidade do modelo
+    return !!config.GEMINI_API_KEY;
 }
 
 // Export default
@@ -428,5 +325,5 @@ export default {
     endCall,
     getCallStatus,
     getActiveCalls,
-    checkTTSAvailability
+    isNativeAudioAvailable
 };

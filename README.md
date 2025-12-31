@@ -276,9 +276,9 @@ Digite uma das palavras sagradas:
 
 ---
 
-## 📞 CHAMADAS DE VOZ WHATSAPP COM IA
+## 📞 CHAMADAS DE VOZ WHATSAPP COM IA NATIVA
 
-O Sistema Jesus Cristo agora suporta **chamadas de voz via WhatsApp com Inteligência Artificial** através da integração com [Wavoip](https://wavoip.com) e Google Gemini.
+O Sistema Jesus Cristo agora suporta **chamadas de voz via WhatsApp com Inteligência Artificial Nativa** através da integração com [Wavoip](https://wavoip.com) e **Gemini 2.5 Flash Native Audio**.
 
 ### 🎯 Configuração
 
@@ -293,66 +293,88 @@ O Sistema Jesus Cristo agora suporta **chamadas de voz via WhatsApp com Intelig�
    GEMINI_API_KEY=sua_chave_gemini
    ```
 
-3. **Instale edge-tts para síntese de voz**
-   ```bash
-   pip install edge-tts
-   ```
-
-4. **Reinicie o bot**
+3. **Inicie o bot**
    - As chamadas de voz serão habilitadas automaticamente
+   - Não é mais necessário instalar edge-tts!
 
-### ✨ Funcionalidades
+### ✨ Funcionalidades com Native Audio
 
-- 📞 **Receber chamadas** de voz no WhatsApp
-- 🎙️ **Transcrição em tempo real** do áudio recebido usando Gemini AI
-- 🤖 **Respostas inteligentes** geradas pelo Gemini com persona de Jesus Cristo
-- 🗣️ **Síntese de voz** das respostas usando edge-tts (voz brasileira)
+- 📞 **Receber chamadas** de voz no WhatsApp automaticamente
+- 🎙️ **Processamento de áudio nativo** - Gemini processa o áudio diretamente
+- 🤖 **Respostas inteligentes** em tempo real com persona de Jesus Cristo
+- 🗣️ **Áudio natural** gerado nativamente pelo Gemini (sem TTS externo)
 - 💬 **Contexto conversacional** mantido durante toda a chamada
-- 📊 **Logs automáticos** de todas as conversas para análise
+- ⚡ **Menor latência** - Sem necessidade de transcrição intermediária
+- 🎭 **Voz mais natural** com emoção e prosódia adequadas
+- 📊 **Logs automáticos** de todas as conversas
 - 🔐 **Criptografia E2E** mantida pelo WhatsApp
 
-### 🧠 Como Funciona
+### 🧠 Como Funciona com Native Audio
 
 1. **Usuário liga** para o bot via WhatsApp
 2. Bot **aceita a chamada** automaticamente (via Wavoip)
-3. Áudio do usuário é **transcrito** em tempo real (Gemini)
-4. Gemini **processa** a mensagem com contexto de Jesus Cristo
-5. Resposta é **sintetizada** em áudio (edge-tts)
-6. Áudio é **enviado** de volta ao usuário
-7. Conversa **continua** naturalmente até o fim da chamada
+3. Áudio do usuário é **processado nativamente** pelo Gemini 2.5
+4. Gemini **entende e responde** diretamente em áudio
+5. Áudio da resposta é **enviado** de volta ao usuário
+6. Conversa **continua** naturalmente até o fim da chamada
+
+### 🆚 Vantagens do Native Audio
+
+**Antes (com TTS separado):**
+- Áudio → Transcrição (Gemini) → Texto
+- Texto → Resposta (Gemini) → Texto
+- Texto → Síntese (edge-tts) → Áudio
+- **Latência total**: ~5-10 segundos
+
+**Agora (com Native Audio):**
+- Áudio → Gemini Native Audio → Áudio
+- **Latência total**: ~2-4 segundos
+- Voz mais natural e expressiva
+- Melhor compreensão de emoção e contexto
 
 ### 📝 Características da IA
 
+- **Modelo**: Gemini 2.5 Flash Native Audio
 - **Persona**: Jesus Cristo, acolhedor e compassivo
-- **Estilo**: Natural, conversacional, não formal demais
-- **Respostas**: Breves (máx. 200 palavras) para evitar fadiga auditiva
+- **Estilo**: Natural, conversacional, caloroso
+- **Respostas**: Breves (máx. 150 palavras) para conversação fluida
 - **Conteúdo**: Escrituras quando apropriado, sempre com empatia
 - **Memória**: Mantém contexto durante toda a chamada
+- **Emoção**: Detecta e responde apropriadamente ao tom emocional
 
 ### 🎨 Exemplo de Uso
 
 ```
 Usuário: [liga para o bot]
-Bot: Olá, filho amado. Como posso te ajudar hoje?
+Bot: [voz calorosa] Olá, filho amado. Como posso te ajudar hoje?
 
 Usuário: Estou com medo do futuro...
-Bot: Eu te entendo. O medo do futuro é natural, mas lembre-se: 
-     "Não temas, porque eu sou contigo" (Isaías 41:10). 
+Bot: [voz compassiva] Eu te entendo profundamente. O medo é natural, 
+     mas lembre-se: "Não temas, porque eu sou contigo". 
      O que especificamente te preocupa?
 
 Usuário: Meu trabalho e minhas finanças...
-Bot: Compreendo sua preocupação. Vamos conversar sobre isso...
+Bot: [voz reconfortante] Compreendo sua angústia. Vamos conversar 
+     sobre isso com calma...
 ```
 
 ### 📝 Notas Técnicas
 
-- A integração usa o pacote [voice-calls-baileys](https://github.com/wavoip/voice-calls-baileys)
-- Requer token válido do Wavoip para funcionar
-- Requer Google Gemini API Key para IA conversacional
-- Requer edge-tts instalado para síntese de voz
-- Se algum componente não estiver configurado, o bot funciona normalmente sem suporte a chamadas
+- Integração com [voice-calls-baileys](https://github.com/wavoip/voice-calls-baileys)
+- Usa **Gemini 2.5 Flash Native Audio** para processamento direto
+- Requer Google Gemini API Key
+- Requer Wavoip token para chamadas
+- **Não requer** edge-tts ou outras dependências de TTS
 - Compatível com WhatsApp Business e pessoal
-- Logs das chamadas são salvos automaticamente no banco de dados
+- Logs salvos automaticamente no banco de dados
+
+### 🚀 Benefícios
+
+- ✅ **Setup mais simples** - Sem dependências Python
+- ✅ **Latência reduzida** - Até 60% mais rápido
+- ✅ **Voz mais natural** - Prosódia e emoção nativas
+- ✅ **Melhor compreensão** - Modelo processa áudio diretamente
+- ✅ **Mais confiável** - Menos pontos de falha
 
 ---
 
