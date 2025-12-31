@@ -60,15 +60,16 @@ initSemanticMemoryTable();
 // AI CORE FUNCTIONS
 // ═══════════════════════════════════════════════════════════════
 
-async function getEmbedding(text) {
+async function getEmbedding(text, taskType = 'RETRIEVAL_DOCUMENT') { // Default para documento
     try {
         const result = await ai.models.embedContent({
             model: EMBEDDING_MODEL,
+            taskType: taskType,
             contents: [{ parts: [{ text: text.substring(0, 8000) }] }]
         });
         return result.embedding.values;
     } catch (e) {
-        console.error('[DeepMemory] Embedding error:', e.message);
+        console.error(`[DeepMemory] Embedding error (type: ${taskType}):`, e.message);
         return null;
     }
 }
@@ -156,7 +157,7 @@ export async function saveConversationSummary(jid, data) {
     const summary = `Pessoa: "${userMessage}" | Jesus: "${botResponse}"`;
     
     // Gera embedding
-    const embedding = await getEmbedding(summary);
+    const embedding = await getEmbedding(summary, 'RETRIEVAL_DOCUMENT');
     if (!embedding) return null;
 
     // Salva
@@ -181,7 +182,7 @@ export async function getRelevantMemories(jid, currentMessage) {
     const profile = db.prepare('SELECT * FROM user_deep_profile WHERE jid = ?').get(jid);
     
     // 2. Busca Memórias Episódicas (Contexto Específico)
-    const queryEmbedding = await getEmbedding(currentMessage);
+    const queryEmbedding = await getEmbedding(currentMessage, 'RETRIEVAL_QUERY');
     let episodicMemories = [];
 
     if (queryEmbedding) {

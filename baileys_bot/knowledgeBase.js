@@ -65,7 +65,7 @@ let isInitializing = false;
  * @param {string} text - Text to embed
  * @returns {Promise<number[]>} - Embedding vector
  */
-export async function getEmbedding(text) {
+export async function getEmbedding(text, taskType = 'RETRIEVAL_DOCUMENT') {
     if (!text || typeof text !== 'string') {
         console.error('[KnowledgeBase] Invalid text for embedding');
         return [];
@@ -83,6 +83,7 @@ export async function getEmbedding(text) {
         // Call Gemini embeddings API
         const result = await ai.models.embedContent({
             model: EMBEDDING_MODEL,
+            taskType: taskType,
             contents: [{ role: 'user', parts: [{ text: text.substring(0, 2000) }] }],
         });
 
@@ -99,7 +100,7 @@ export async function getEmbedding(text) {
 
         return embedding;
     } catch (error) {
-        console.error('[KnowledgeBase] Error generating embedding:', error.message);
+        console.error(`[KnowledgeBase] Error generating embedding (type: ${taskType}):`, error.message);
         return [];
     }
 }
@@ -362,7 +363,7 @@ async function generateEmbeddingsForEntries(entries, batchSize = 5, delayMs = 10
 
         const promises = batch.map(async (entry) => {
             try {
-                const embedding = await getEmbedding(entry.searchableText);
+                const embedding = await getEmbedding(entry.searchableText, 'RETRIEVAL_DOCUMENT');
                 entry.embedding = embedding;
                 if (embedding.length > 0) {
                     processed++;
@@ -520,7 +521,7 @@ export async function searchRelevantContext(query, options = {}) {
 
     try {
         // Generate embedding for query
-        const queryEmbedding = await getEmbedding(query);
+        const queryEmbedding = await getEmbedding(query, 'RETRIEVAL_QUERY');
 
         if (queryEmbedding.length === 0) {
             console.warn('[KnowledgeBase] Failed to generate query embedding');
