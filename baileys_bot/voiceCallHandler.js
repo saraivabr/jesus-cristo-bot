@@ -17,6 +17,7 @@ import { writeFile, readFile, unlink } from 'fs/promises';
 import { existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
+import { randomUUID } from 'crypto';
 import config from './config.js';
 import * as db from './database.js';
 
@@ -60,6 +61,24 @@ const MAX_RESPONSE_LENGTH = 600; // ~200 words in Portuguese
 
 // Active calls storage
 const activeCalls = new Map();
+
+// ═══════════════════════════════════════════════════════════════
+// HELPER FUNCTIONS
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Clean text for TTS by removing markdown and special formatting
+ * @param {string} text - Text to clean
+ * @returns {string} - Cleaned text suitable for speech synthesis
+ */
+function cleanTextForTTS(text) {
+    return text
+        .replace(/\*\*/g, '')           // Remove bold markdown
+        .replace(/\*/g, '')             // Remove italic markdown
+        .replace(/#{1,6}\s/g, '')       // Remove heading markers
+        .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1')  // Convert links to just text
+        .trim();
+}
 
 // ═══════════════════════════════════════════════════════════════
 // CALL SESSION MANAGER
@@ -215,18 +234,13 @@ Lembre-se: Esta é uma conversa falada, então seja natural e conversacional.`;
         try {
             console.log(`[VoiceCall] Sintetizando fala: "${text.substring(0, 50)}..."`);
 
-            // Criar arquivo temporário
-            const tempId = `tts_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+            // Criar arquivo temporário com UUID único
+            const tempId = `tts_${Date.now()}_${randomUUID()}`;
             const tempTextFile = join(tmpdir(), `${tempId}.txt`);
             const tempAudioFile = join(tmpdir(), `${tempId}.mp3`);
 
-            // Limpar texto para TTS (remover markdown, etc)
-            const cleanText = text
-                .replace(/\*\*/g, '')
-                .replace(/\*/g, '')
-                .replace(/#{1,6}\s/g, '')
-                .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1')
-                .trim();
+            // Limpar texto para TTS usando função auxiliar
+            const cleanText = cleanTextForTTS(text);
 
             // Escrever texto em arquivo temporário (mais seguro que passar como argumento)
             await writeFile(tempTextFile, cleanText, 'utf-8');
