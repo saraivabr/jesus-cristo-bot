@@ -208,6 +208,50 @@ export const NUDGE_CONFIG = {
     maxTimeSinceSent: 3600000 // 1 hora
 };
 
+// ═══════════════════════════════════════════════════════════════
+// Behavior Analysis Configuration (Análise Psicodinâmica)
+// ═══════════════════════════════════════════════════════════════
+export const BEHAVIOR_CONFIG = {
+    enabled: true,
+
+    // Aguardar usuário terminar de digitar antes de responder
+    waitForTyping: {
+        enabled: true,
+        maxWait: 30000,  // Máximo 30 segundos
+    },
+
+    // Limiares para classificação de perfis
+    thresholds: {
+        ansioso: 7,      // Score mínimo para classificar como ansioso
+        evitativo: 7,
+        impulsivo: 7,
+        perfeccionista: 7,
+        reflexivo: 7,
+    },
+
+    // Detecção de crise
+    crisisDetection: {
+        enabled: true,
+        nightHoursStart: 0,  // 00:00
+        nightHoursEnd: 5,    // 05:00
+        burstThreshold: 5,   // Mensagens em 60s para indicar crise
+    },
+
+    // Histórico
+    history: {
+        maxTypingPatterns: 20,  // Máximo de padrões de digitação a manter
+        maxResponseTimes: 50,   // Máximo de tempos de resposta a manter
+        maxMessageTimestamps: 100, // Máximo de timestamps de mensagens
+    },
+
+    // Logging
+    logging: {
+        enabled: true,
+        logProfileChanges: true,
+        logTypingPatterns: true,
+    }
+};
+
 // Resilience Configuration
 export const RESILIENCE_CONFIG = {
     // Gemini
@@ -232,6 +276,45 @@ export const RESILIENCE_CONFIG = {
     logLevel: process.env.LOG_LEVEL || 'info',
 };
 
+// ═══════════════════════════════════════════════════════════════
+// RAG (Retrieval Augmented Generation) Configuration
+// ═══════════════════════════════════════════════════════════════
+export const RAG_CONFIG = {
+    enabled: true,
+
+    // Embeddings
+    embeddingModel: 'text-embedding-004',
+    embeddingDimensions: 768,
+
+    // Busca semântica
+    maxResults: 5,              // Máximo de trechos retornados
+    similarityThreshold: 0.65,  // Mínimo de similaridade (0-1)
+
+    // Cache
+    cacheEmbeddings: true,
+    cacheExpiry: 86400000,      // 24 horas
+
+    // Memória semântica
+    maxMemoriesPerUser: 50,     // Máximo de memórias por usuário
+    summarizeAfter: 10,         // Resumir após N mensagens
+    memoryExpireDays: 90,       // Memórias expiram após 90 dias
+
+    // Storage
+    storageType: 'sqlite',      // 'sqlite' ou 'memory'
+
+    // Dados
+    dataPath: './data',
+    evangelhos: 'evangelhos.json',
+    contextoHistorico: 'contexto_historico.json',
+
+    // Logging
+    logging: {
+        enabled: true,
+        logSearches: true,
+        logEmbeddings: false,   // Muito verboso, desativado por padrão
+    }
+};
+
 // Export all configurations as default
 export default {
   GEMINI_API_KEY,
@@ -249,5 +332,7 @@ export default {
   GEMINI_CONFIG,
   BAILEYS_CONFIG,
   NUDGE_CONFIG,
-  RESILIENCE_CONFIG
+  BEHAVIOR_CONFIG,
+  RESILIENCE_CONFIG,
+  RAG_CONFIG
 };

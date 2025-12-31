@@ -48,36 +48,60 @@ function calculateTypingDelay(text, complexity = 'medium') {
 /**
  * Fragmenta mensagem como HUMANO no WhatsApp
  * Cada linha ou frase curta = mensagem separada
+ * MELHORADO: Não corta frases no meio
  */
 function fragmentMessages(text) {
     if (!text || typeof text !== 'string') return [];
 
     const fragments = [];
 
-    // 1. Divide por quebras de linha primeiro (humanos usam Enter)
-    const lines = text.split(/\n+/).filter(l => l.trim());
+    // 1. Divide por parágrafos (dupla quebra) ou linhas simples
+    const paragraphs = text.split(/\n\n+/).filter(p => p.trim());
 
-    for (const line of lines) {
-        const trimmed = line.trim();
+    for (const para of paragraphs) {
+        // Divide linhas dentro do parágrafo
+        const lines = para.split(/\n/).filter(l => l.trim());
 
-        // Linha curta? Envia como está
-        if (trimmed.length < 80) {
-            fragments.push(trimmed);
-            continue;
-        }
+        for (const line of lines) {
+            const trimmed = line.trim();
 
-        // Linha longa? Divide por pontuação
-        // Cada frase vira uma mensagem
-        const sentences = trimmed.match(/[^.!?]+[.!?]+/g) || [trimmed];
+            // Linha curta (< 150 chars)? Envia como está
+            if (trimmed.length <= 150) {
+                if (trimmed) fragments.push(trimmed);
+                continue;
+            }
 
-        for (const sentence of sentences) {
-            const s = sentence.trim();
-            if (s) fragments.push(s);
+            // Linha longa? Divide por sentenças PRESERVANDO o resto
+            // Match sentenças com pontuação OU texto final sem pontuação
+            const sentences = trimmed.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [trimmed];
+
+            let currentFragment = '';
+
+            for (const sentence of sentences) {
+                const s = sentence.trim();
+                if (!s) continue;
+
+                // Se adicionar esta frase ultrapassa 150 chars, envia o atual
+                if (currentFragment && (currentFragment + ' ' + s).length > 150) {
+                    fragments.push(currentFragment);
+                    currentFragment = s;
+                } else {
+                    // Junta frases curtas
+                    currentFragment = currentFragment
+                        ? currentFragment + ' ' + s
+                        : s;
+                }
+            }
+
+            // Adiciona o que sobrou
+            if (currentFragment && currentFragment.trim()) {
+                fragments.push(currentFragment.trim());
+            }
         }
     }
 
-    // Remove fragmentos vazios
-    return fragments.filter(f => f && f.trim());
+    // Remove fragmentos vazios ou só pontuação
+    return fragments.filter(f => f && f.trim() && !/^[.!?,;:\s]+$/.test(f));
 }
 
 /**

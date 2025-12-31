@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  jesus-bot:
+    build: .
+    container_name: jesus-bot
+    restart: unless-stopped
+    volumes:
+      # Persistência da sessão do WhatsApp
+      - ./auth_session:/app/auth_session
+      # Persistência do banco de dados e arquivos JSON
+      - ./data:/app/data
+      # Persistência do arquivo SQLite na raiz (se estiver lá)
+      - ./jesus.db:/app/jesus.db
+      # Diretório temporário
+      - ./temp:/app/temp
+    environment:
+      - NODE_ENV=production
+      # As variáveis do .env serão passadas aqui
+    env_file:
+      - .env
+    # Limite de recursos para caber na e2-micro (Free Tier da Google)
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M

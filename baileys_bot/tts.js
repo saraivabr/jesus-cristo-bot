@@ -151,11 +151,6 @@ export async function generateAudio(text) {
  * @returns {boolean} True if audio should be sent
  */
 export function shouldSendAudio(text, mood = 'neutral') {
-  // Check if TTS is enabled
-  if (!TTS_CONFIG.enabled) {
-    return false;
-  }
-
   // Check if text is valid and within length limits
   if (!text || typeof text !== 'string') {
     return false;
