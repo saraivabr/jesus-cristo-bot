@@ -7,7 +7,7 @@
  *
  * Features:
  * - Load data from JSON files (evangelhos.json, contexto_historico.json)
- * - Generate embeddings using Gemini API (text-embedding-004)
+ * - Generate embeddings using Gemini API (gemini-embedding-001)
  * - In-memory vector store with caching
  * - Semantic search using cosine similarity
  */
@@ -26,7 +26,7 @@ const __dirname = dirname(__filename);
 const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
 
 // Embedding model
-const EMBEDDING_MODEL = 'text-embedding-004';
+const EMBEDDING_MODEL = 'gemini-embedding-001';
 
 // ═══════════════════════════════════════════════════════════════
 // IN-MEMORY VECTOR STORE

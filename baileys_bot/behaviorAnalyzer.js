@@ -136,11 +136,34 @@ export function getResponseAdaptation(jid) {
 
 export function isTyping(jid) { return activeTyping.has(jid); }
 
+/**
+ * Aguarda o usuário parar de digitar (composing -> paused/available)
+ * @param {string} jid - ID do usuário
+ * @param {number} timeout - Tempo máximo de espera em ms
+ * @returns {Promise<boolean>} - true se parou, false se timeout
+ */
+export async function waitForTypingEnd(jid, timeout = 30000) {
+    const startTime = Date.now();
+    const checkInterval = 500; // Verifica a cada 500ms
+
+    while (activeTyping.has(jid)) {
+        if (Date.now() - startTime > timeout) {
+            console.log(`[Behavior] Timeout esperando ${jid} parar de digitar`);
+            activeTyping.delete(jid); // Limpa para não travar
+            return false;
+        }
+        await new Promise(resolve => setTimeout(resolve, checkInterval));
+    }
+
+    return true;
+}
+
 export default {
     onPresenceUpdate,
     onMessageReceived,
     onBotMessageSent,
     getResponseAdaptation,
     trackDeepEmotion,
-    isTyping
+    isTyping,
+    waitForTypingEnd
 };

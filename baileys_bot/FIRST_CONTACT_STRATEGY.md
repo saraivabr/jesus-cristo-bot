@@ -26,7 +26,7 @@ Each need detection includes:
 
 ### 2. **Semantic Search via Embeddings**
 
-The system uses **text-embedding-004** (Google Gemini's embedding model) to:
+The system uses **gemini-embedding-001** (Google Gemini's embedding model) to:
 
 1. Generate a semantic embedding of the user's first message
 2. Search the knowledge base (evangelhos.json + curiosidades.json) using cosine similarity

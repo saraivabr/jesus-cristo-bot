@@ -10,7 +10,7 @@ import { GoogleGenAI } from '@google/genai';
 import config from './config.js';
 import { db } from './database.js';
 
-const EMBEDDING_MODEL = 'text-embedding-004';
+const EMBEDDING_MODEL = 'gemini-embedding-001';
 const ANALYSIS_MODEL = 'gemini-2.5-flash';
 const MAX_MEMORIES = 100; // Aumentado para permitir mais contexto
 
@@ -60,14 +60,23 @@ initSemanticMemoryTable();
 // AI CORE FUNCTIONS
 // ═══════════════════════════════════════════════════════════════
 
-async function getEmbedding(text, taskType = 'RETRIEVAL_DOCUMENT') { // Default para documento
+async function getEmbedding(text, taskType = 'RETRIEVAL_DOCUMENT') {
     try {
         const result = await ai.models.embedContent({
             model: EMBEDDING_MODEL,
             taskType: taskType,
-            contents: [{ parts: [{ text: text.substring(0, 8000) }] }]
+            contents: [{ role: 'user', parts: [{ text: text.substring(0, 8000) }] }]
         });
-        return result.embedding.values;
+
+        // Handle both API response structures
+        const embedding = result.embeddings?.[0]?.values || result.embedding?.values || null;
+
+        if (!embedding || embedding.length === 0) {
+            console.warn('[DeepMemory] Empty embedding returned');
+            return null;
+        }
+
+        return embedding;
     } catch (e) {
         console.error(`[DeepMemory] Embedding error (type: ${taskType}):`, e.message);
         return null;

@@ -1,6 +1,8 @@
 /**
- * 🕊️ JESUS CRISTO BOT - O BOM PASTOR DIGITAL
+ * JESUS CRISTO BOT - O BOM PASTOR DIGITAL
  * Orquestrador Principal (WhatsApp + Gemini)
+ *
+ * ATUALIZADO: Suporte a Codigo de Pareamento + Dashboard
  */
 
 import makeWASocket, { DisconnectReason, useMultiFileAuthState, makeCacheableSignalKeyStore, getContentType } from '@whiskeysockets/baileys';
@@ -11,8 +13,9 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import fs from 'fs';
 import http from 'http';
+import readline from 'readline';
 
-// Módulos internos
+// Modulos internos
 import config from './config.js';
 import * as db from './database.js';
 import * as scheduler from './scheduler.js';
@@ -28,110 +31,314 @@ const __dirname = dirname(__filename);
 const logger = pino({ level: 'warn' });
 const messageBuffer = new Map();
 const msgRetryCounterCache = new NodeCache();
+
+// Estado global
 let sock = null;
 let lastQR = null;
+let pairingCode = null;
 let connectionStatus = 'Desconectado';
+let connectedPhone = null;
 let reconnectAttempts = 0;
+let messageCount = 0;
+let startTime = Date.now();
+
 const MAX_RECONNECT_ATTEMPTS = 5;
+const PORT = process.env.PORT || 8080;
+
+// Configuracao: usar codigo de pareamento ou QR
+const USE_PAIRING_CODE = process.env.USE_PAIRING_CODE === 'true' || process.argv.includes('--pair');
+const PHONE_NUMBER = process.env.PHONE_NUMBER || '5511980948484';
 
 // ═══════════════════════════════════════════════════════════════
-// SERVIDOR HTTP (Painel de Controle)
+// DASHBOARD HTTP
 // ═══════════════════════════════════════════════════════════════
-const PORT = process.env.PORT || 8080;
-const httpServer = http.createServer(async (req, res) => {
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-    
-    if (req.url === '/qr') {
-        if (connectionStatus === 'Conectado') {
-            res.end('<h1>✅ WhatsApp já está conectado!</h1><p><a href="/">Ver Status</a></p>');
-        } else if (lastQR) {
-            const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(lastQR)}`;
-            res.end(`
-                <div style="text-align: center; font-family: sans-serif; padding-top: 50px;">
-                    <h1>🕊️ Escaneie para conectar Jesus</h1>
-                    <img src="${qrImageUrl}" alt="QR Code" style="border: 10px solid white; box-shadow: 0 0 20px rgba(0,0,0,0.1);" />
-                    <p style="margin-top: 20px;">Aponte seu WhatsApp para a imagem acima.</p>
-                    <p><a href="/">Voltar ao Status</a></p>
-                    <script>setTimeout(() => location.reload(), 20000);</script>
-                </div>
-            `);
-        } else {
-            res.end('<h1>⏳ Gerando QR Code...</h1><p>Aguarde 5 segundos.</p><script>setTimeout(() => location.assign("/qr"), 5000);</script>');
+
+const htmlTemplate = (content) => `
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="refresh" content="10">
+    <title>Jesus Cristo Bot - Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            min-height: 100vh;
+            color: #fff;
+            padding: 20px;
         }
-    } else if (req.url === '/reset') {
-        console.log('[System] Reset de sessão solicitado via Web');
-        res.end('<h1>♻️ Reiniciando Sessão...</h1><p>O bot vai apagar a conexão atual e gerar um novo QR Code. Volte em 10 segundos.</p><script>setTimeout(() => location.assign("/qr"), 10000);</script>');
-        
-        if (sock) try { await sock.logout(); } catch(e) {}
-        if (fs.existsSync(join(__dirname, 'auth_session'))) {
-            fs.rmSync(join(__dirname, 'auth_session'), { recursive: true, force: true });
+        .container { max-width: 800px; margin: 0 auto; }
+        .header { text-align: center; margin-bottom: 30px; }
+        .header h1 { font-size: 2.5em; margin-bottom: 10px; }
+        .header .subtitle { color: #888; }
+        .status-card {
+            background: rgba(255,255,255,0.1);
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 20px;
+            backdrop-filter: blur(10px);
         }
-        process.exit(0);
-    } else {
-        res.end(`
-            <div style="text-align: center; font-family: sans-serif; padding-top: 50px;">
-                <h1>🕊️ Jesus Cristo Bot Status</h1>
-                <div style="padding: 20px; margin: 20px auto; max-width: 300px; border-radius: 10px; background: ${connectionStatus === 'Conectado' ? '#d4edda' : '#f8d7da'}; color: ${connectionStatus === 'Conectado' ? '#155724' : '#721c24'}; border: 1px solid ${connectionStatus === 'Conectado' ? '#c3e6cb' : '#f5c6cb'};">
-                    Status: <strong>${connectionStatus}</strong>
-                </div>
-                ${connectionStatus !== 'Conectado' ? '<p><a href="/qr" style="display: inline-block; padding: 15px 30px; background: #25D366; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; font-size: 1.2em;">CONECTAR AGORA</a></p>' : ''}
-                <p style="margin-top: 20px;"><a href="/reset" style="color: #721c24; font-size: 0.8em;" onclick="return confirm('Isso vai desconectar o WhatsApp atual. Tem certeza?')">Forçar Nova Sincronização (Reset)</a></p>
-                <p style="color: #666; font-size: 0.8em; margin-top: 50px;">Servindo ao Senhor com Inteligência Programática.</p>
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 10px;
+            animation: pulse 2s infinite;
+        }
+        .status-connected { background: #00ff88; box-shadow: 0 0 10px #00ff88; }
+        .status-disconnected { background: #ff4444; box-shadow: 0 0 10px #ff4444; }
+        .status-waiting { background: #ffaa00; box-shadow: 0 0 10px #ffaa00; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        .pairing-code {
+            font-size: 3em;
+            font-weight: bold;
+            letter-spacing: 8px;
+            text-align: center;
+            background: linear-gradient(90deg, #00ff88, #00aaff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .qr-container { text-align: center; padding: 20px; }
+        .qr-container img { max-width: 300px; border-radius: 10px; }
+        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; }
+        .stat-box {
+            background: rgba(0,255,136,0.1);
+            border-radius: 10px;
+            padding: 15px;
+            text-align: center;
+        }
+        .stat-value { font-size: 2em; font-weight: bold; color: #00ff88; }
+        .stat-label { color: #888; font-size: 0.9em; }
+        .instructions {
+            background: rgba(255,170,0,0.1);
+            border-left: 4px solid #ffaa00;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 0 10px 10px 0;
+        }
+        .btn {
+            display: inline-block;
+            padding: 12px 25px;
+            background: linear-gradient(90deg, #ff4444, #ff6666);
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            margin: 10px 5px;
+            transition: transform 0.2s;
+        }
+        .btn:hover { transform: scale(1.05); }
+        .btn-green { background: linear-gradient(90deg, #00aa44, #00ff88); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🕊️ Jesus Cristo Bot</h1>
+            <p class="subtitle">O Bom Pastor Digital</p>
+        </div>
+        ${content}
+    </div>
+</body>
+</html>
+`;
+
+const httpServer = http.createServer((req, res) => {
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+
+    const url = new URL(req.url, `http://${req.headers.host}`);
+
+    if (url.pathname === '/reset') {
+        console.log('[Dashboard] Reset solicitado');
+        res.writeHead(200);
+        res.end(htmlTemplate(`
+            <div class="status-card">
+                <h2>♻️ Reiniciando...</h2>
+                <p>A sessao sera limpa e um novo codigo sera gerado.</p>
+                <script>setTimeout(() => location.href = '/', 5000);</script>
             </div>
-        `);
+        `));
+
+        setTimeout(async () => {
+            if (sock) try { await sock.logout(); } catch(e) {}
+            if (fs.existsSync(join(__dirname, 'auth_session'))) {
+                fs.rmSync(join(__dirname, 'auth_session'), { recursive: true, force: true });
+            }
+            pairingCode = null;
+            lastQR = null;
+            connectionStatus = 'Desconectado';
+            connectToWhatsApp();
+        }, 1000);
+        return;
     }
+
+    if (url.pathname === '/health') {
+        res.writeHead(200, { 'Content-Type': 'text/plain' });
+        res.end('OK');
+        return;
+    }
+
+    // Dashboard principal
+    let content = '';
+
+    if (connectionStatus === 'Conectado') {
+        const uptime = Math.floor((Date.now() - startTime) / 1000 / 60);
+        content = `
+            <div class="status-card">
+                <h2><span class="status-indicator status-connected"></span>Conectado</h2>
+                <p style="margin-top:10px">Telefone: ${connectedPhone || 'N/A'}</p>
+            </div>
+            <div class="stats">
+                <div class="stat-box">
+                    <div class="stat-value">${messageCount}</div>
+                    <div class="stat-label">Mensagens</div>
+                </div>
+                <div class="stat-box">
+                    <div class="stat-value">${uptime}m</div>
+                    <div class="stat-label">Uptime</div>
+                </div>
+            </div>
+            <div style="text-align:center; margin-top:20px;">
+                <a href="/reset" class="btn" onclick="return confirm('Desconectar o WhatsApp?')">Desconectar</a>
+            </div>
+        `;
+    } else if (pairingCode) {
+        content = `
+            <div class="status-card">
+                <h2><span class="status-indicator status-waiting"></span>Aguardando Pareamento</h2>
+                <div class="pairing-code">${pairingCode}</div>
+                <div class="instructions">
+                    <strong>Como conectar:</strong>
+                    <ol style="margin-left:20px; margin-top:10px;">
+                        <li>Abra o WhatsApp no celular</li>
+                        <li>Va em <b>Configuracoes > Dispositivos conectados</b></li>
+                        <li>Toque em <b>Conectar dispositivo</b></li>
+                        <li>Toque em <b>Conectar com numero de telefone</b></li>
+                        <li>Digite o codigo acima</li>
+                    </ol>
+                </div>
+            </div>
+            <div style="text-align:center;">
+                <a href="/reset" class="btn">Gerar Novo Codigo</a>
+            </div>
+        `;
+    } else if (lastQR) {
+        const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(lastQR)}`;
+        content = `
+            <div class="status-card">
+                <h2><span class="status-indicator status-waiting"></span>Escaneie o QR Code</h2>
+                <div class="qr-container">
+                    <img src="${qrUrl}" alt="QR Code">
+                </div>
+            </div>
+            <div style="text-align:center;">
+                <a href="/?pair=true" class="btn btn-green">Usar Codigo de Pareamento</a>
+                <a href="/reset" class="btn">Resetar</a>
+            </div>
+        `;
+    } else {
+        content = `
+            <div class="status-card">
+                <h2><span class="status-indicator status-disconnected"></span>Desconectado</h2>
+                <p>Aguardando inicializacao...</p>
+            </div>
+        `;
+    }
+
+    res.writeHead(200);
+    res.end(htmlTemplate(content));
 });
 
 httpServer.listen(PORT, '0.0.0.0', () => {
-    console.log(`\n🌍 Painel de Gerenciamento ativo na porta ${PORT}`);
+    console.log(`\n🌐 Dashboard: http://localhost:${PORT}`);
 });
 
 // ═══════════════════════════════════════════════════════════════
-// CONEXÃO WHATSAPP
+// CONEXAO WHATSAPP
 // ═══════════════════════════════════════════════════════════════
 
 async function connectToWhatsApp() {
     const { state, saveCreds } = await useMultiFileAuthState('auth_session');
 
-    sock = makeWASocket({
+    const socketConfig = {
         auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
         logger,
         msgRetryCounterCache,
         generateHighQualityLinkPreview: true,
         getMessage: async () => ({ conversation: '' }),
-    });
+    };
+
+    // Se usar codigo de pareamento, desabilita QR
+    if (USE_PAIRING_CODE) {
+        socketConfig.printQRInTerminal = false;
+    }
+
+    sock = makeWASocket(socketConfig);
+
+    // Solicita codigo de pareamento se necessario
+    if (USE_PAIRING_CODE && !sock.authState.creds.registered) {
+        console.log('\n📱 Solicitando codigo de pareamento...');
+        try {
+            await new Promise(r => setTimeout(r, 2000));
+            pairingCode = await sock.requestPairingCode(PHONE_NUMBER);
+            console.log('\n════════════════════════════════════════');
+            console.log('   🔑 CODIGO DE PAREAMENTO:', pairingCode);
+            console.log('════════════════════════════════════════');
+            console.log('\n📲 No WhatsApp: Configuracoes > Dispositivos > Conectar com numero\n');
+        } catch (err) {
+            console.error('❌ Erro ao solicitar codigo:', err.message);
+        }
+    }
 
     sock.ev.process(async (events) => {
         if (events['connection.update']) {
             const { connection, lastDisconnect, qr } = events['connection.update'];
 
-            if (qr) {
+            if (qr && !USE_PAIRING_CODE) {
                 lastQR = qr;
-                console.log('\n📱 QR Code gerado! Disponível em: http://185.194.216.184:8080/qr\n');
+                console.log('\n📱 QR Code gerado! Acesse o dashboard.\n');
                 qrcode.generate(qr, { small: true });
             }
 
             if (connection === 'close') {
                 connectionStatus = 'Desconectado';
+                pairingCode = null;
                 const statusCode = (lastDisconnect?.error)?.output?.statusCode;
                 const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+
+                console.log('❌ Conexao fechada:', lastDisconnect?.error?.message || 'Unknown');
 
                 if (shouldReconnect && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
                     reconnectAttempts++;
                     const delay = Math.min(5000 * Math.pow(2, reconnectAttempts - 1), 60000);
+                    console.log(`🔄 Reconectando em ${delay/1000}s...`);
                     setTimeout(connectToWhatsApp, delay);
                 } else if (statusCode === DisconnectReason.loggedOut) {
-                    console.log('👋 Deslogado. Limpando sessão...');
+                    console.log('👋 Deslogado. Limpando sessao...');
                     if (fs.existsSync(join(__dirname, 'auth_session'))) {
                         fs.rmSync(join(__dirname, 'auth_session'), { recursive: true, force: true });
                     }
-                    connectToWhatsApp();
+                    setTimeout(connectToWhatsApp, 3000);
                 }
             } else if (connection === 'open') {
                 connectionStatus = 'Conectado';
                 lastQR = null;
+                pairingCode = null;
                 reconnectAttempts = 0;
-                console.log('✅ WhatsApp Conectado!');
+                startTime = Date.now();
+
+                // Pega o numero conectado
+                connectedPhone = sock.user?.id?.split(':')[0] || sock.user?.id?.split('@')[0];
+
+                console.log('\n✅ JESUS CRISTO BOT - ONLINE');
+                console.log(`📱 Conectado: ${connectedPhone}`);
+                console.log(`🌐 Dashboard: http://localhost:${PORT}\n`);
+
                 scheduler.initScheduler(async (phone, message) => sender.sendMessage(sock, phone, message));
             }
         }
@@ -141,7 +348,10 @@ async function connectToWhatsApp() {
         if (events['messages.upsert']) {
             const { messages, type } = events['messages.upsert'];
             if (type === 'notify') {
-                for (const msg of messages) await processIncomingMessage(msg);
+                for (const msg of messages) {
+                    messageCount++;
+                    await processIncomingMessage(msg);
+                }
             }
         }
 
@@ -175,7 +385,7 @@ async function processIncomingMessage(message) {
     let hasAudio = false;
     let sharedContacts = [];
 
-    // Extração de Conteúdo (Texto, Imagem, Áudio, Contatos)
+    // Extracao de Conteudo (Texto, Imagem, Audio, Contatos)
     if (contentType === 'conversation') {
         userText = msgContent.conversation;
     } else if (contentType === 'extendedTextMessage') {
@@ -209,7 +419,7 @@ async function processIncomingMessage(message) {
         if (perfil) {
             db.deleteUsuario(perfil.id);
             await sender.sendMessage(sock, remoteJid, "ZERADO");
-            await handleConversation(sock, remoteJid, "Olá", message.pushName, message, [], false, { isUrgent: true, urgencyLevel: 'critico', adjustedDebounce: 0 });
+            await handleConversation(sock, remoteJid, "Ola", message.pushName, message, [], false, { isUrgent: true, urgencyLevel: 'critico', adjustedDebounce: 0 });
             return;
         }
     }
@@ -231,18 +441,41 @@ async function processIncomingMessage(message) {
         const data = { ...buffer };
         messageBuffer.delete(remoteJid);
         await handleConversation(
-            sock, 
-            remoteJid, 
-            data.texts.join(" "), 
-            message.pushName || 'Filho(a)', 
-            message, 
-            data.contacts, 
-            data.hasAudio, 
+            sock,
+            remoteJid,
+            data.texts.join(" "),
+            message.pushName || 'Filho(a)',
+            message,
+            data.contacts,
+            data.hasAudio,
             data.urgency
         );
     }, buffer.urgency.adjustedDebounce || 7000);
 }
 
-// Iniciar
-process.on('SIGINT', () => { if(db) db.closeDatabase(); process.exit(0); });
+// ═══════════════════════════════════════════════════════════════
+// INICIALIZACAO
+// ═══════════════════════════════════════════════════════════════
+
+process.on('SIGINT', () => {
+    console.log('\n👋 Encerrando...');
+    if(db) db.closeDatabase();
+    httpServer.close();
+    process.exit(0);
+});
+
+process.on('uncaughtException', (err) => {
+    console.error('[FATAL]', err);
+});
+
+console.log('\n🕊️ JESUS CRISTO BOT');
+console.log('═══════════════════════════════════════');
+if (USE_PAIRING_CODE) {
+    console.log('📱 Modo: Codigo de Pareamento');
+    console.log(`📞 Telefone: ${PHONE_NUMBER}`);
+} else {
+    console.log('📱 Modo: QR Code');
+}
+console.log('═══════════════════════════════════════\n');
+
 connectToWhatsApp().catch(console.error);

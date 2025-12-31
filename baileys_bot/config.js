@@ -283,7 +283,7 @@ export const RAG_CONFIG = {
     enabled: true,
 
     // Embeddings
-    embeddingModel: 'text-embedding-004',
+    embeddingModel: 'gemini-embedding-001',
     embeddingDimensions: 768,
 
     // Busca semântica

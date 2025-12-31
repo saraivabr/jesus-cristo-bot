@@ -66,6 +66,27 @@ export async function generateResponse(userId, message, userContextOrExtra = nul
 
                 context.emotionalState = emotionalData.sentiment.emotion;
                 context.needsListening = emotionalData.listenMode.shouldListen;
+
+                // Update topics and detect prayer requests
+                if (emotionalData.sentiment.detectedTopics) {
+                    const newTopics = emotionalData.sentiment.detectedTopics;
+                    context.topics = [...new Set([...(context.topics || []), ...newTopics])];
+
+                    // Simple heuristic for prayer requests
+                    const prayerKeywords = ['oração', 'reza', 'orar', 'rezar', 'pedir a deus', 'interceder'];
+                    const isPrayerRequest = newTopics.some(t => prayerKeywords.some(k => t.toLowerCase().includes(k))) ||
+                                          prayerKeywords.some(k => message.toLowerCase().includes(k));
+
+                    if (isPrayerRequest) {
+                        if (!context.prayerRequests) context.prayerRequests = [];
+                        context.prayerRequests.push({
+                            request: message,
+                            timestamp: new Date().toISOString(),
+                            status: 'received'
+                        });
+                    }
+                }
+
                 userContexts.set(userId, context);
                 
                 console.log(`[Gemini] State: ${context.emotionalState}, Listen: ${context.needsListening}`);
@@ -151,6 +172,10 @@ export function getActiveSessionCount() {
   return chatSessions.size;
 }
 
+export function getUserContext(userId) {
+    return userContexts.get(userId);
+}
+
 // Pass-through exports for external use if needed
 export const getCircuitBreakerState = resilience.getCircuitBreakerState;
 export const getEmotionalHistoryForUser = emotion.getEmotionalHistory;
@@ -167,6 +192,7 @@ function updateUserContext(userId, contextUpdate) {
         conversationCount: 0,
         lastInteraction: new Date().toISOString(),
         topics: [],
+        prayerRequests: [],
         emotionalState: 'neutral',
     };
     
@@ -237,6 +263,7 @@ export default {
     clearSession,
     clearAllSessions,
     getActiveSessionCount,
+    getUserContext,
     getCircuitBreakerState,
     getEmotionalHistoryForUser: emotion.getEmotionalHistory,
     // Keep legacy analyzeSentiment for specific use cases if any, but point to new module
