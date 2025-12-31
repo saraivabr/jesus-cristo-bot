@@ -78,6 +78,7 @@ import { Boom } from '@hapi/boom';
 import pino from 'pino';
 import qrcode from 'qrcode-terminal';
 import NodeCache from 'node-cache';
+import { useVoiceCallsBaileys } from 'voice-calls-baileys';
 
 import * as gemini from './gemini.js';
 import * as humanizer from './humanizer.js';
@@ -661,6 +662,27 @@ async function connectToWhatsApp() {
         generateHighQualityLinkPreview: true,
         getMessage: async (key) => ({ conversation: '' }),
     });
+
+    // ═══════════════════════════════════════════════════════════════
+    // VOICE CALLS INTEGRATION (Wavoip)
+    // ═══════════════════════════════════════════════════════════════
+    if (config.VOICE_CALLS_CONFIG.enabled && config.VOICE_CALLS_CONFIG.autoConnect) {
+        try {
+            console.log('📞 Inicializando suporte a chamadas de voz...');
+            await useVoiceCallsBaileys(
+                config.VOICE_CALLS_CONFIG.token,
+                sock,
+                'close',  // Estado inicial da conexão
+                config.VOICE_CALLS_CONFIG.logger
+            );
+            console.log('✅ Chamadas de voz habilitadas via Wavoip');
+        } catch (error) {
+            console.error('❌ Erro ao inicializar chamadas de voz:', error.message);
+            console.log('   O bot continuará funcionando sem suporte a chamadas.');
+        }
+    } else {
+        console.log('ℹ️  Chamadas de voz desabilitadas (WAVOIP_TOKEN não configurado)');
+    }
 
     sock.ev.process(async (events) => {
         if (events['connection.update']) {

@@ -276,12 +276,47 @@ Digite uma das palavras sagradas:
 
 ---
 
+## 📞 CHAMADAS DE VOZ WHATSAPP
+
+O Sistema Jesus Cristo agora suporta **chamadas de voz via WhatsApp** através da integração com [Wavoip](https://wavoip.com).
+
+### 🎯 Configuração
+
+1. **Obtenha seu token Wavoip**
+   - Acesse: https://wavoip.com
+   - Crie uma conta e gere seu token de API
+
+2. **Configure no ambiente**
+   ```bash
+   # Adicione ao arquivo .env
+   WAVOIP_TOKEN=seu_token_aqui
+   ```
+
+3. **Reinicie o bot**
+   - As chamadas de voz serão habilitadas automaticamente
+
+### ✨ Funcionalidades
+
+- 📞 **Receber chamadas** de voz no WhatsApp
+- 🔊 **Realizar chamadas** de voz para contatos
+- 🎙️ **Áudio bidirecional** em tempo real
+- 🔐 **Criptografia E2E** mantida pelo WhatsApp
+
+### 📝 Notas Técnicas
+
+- A integração usa o pacote [voice-calls-baileys](https://github.com/wavoip/voice-calls-baileys)
+- Requer token válido do Wavoip para funcionar
+- Se o token não for configurado, o bot funciona normalmente sem suporte a chamadas
+- Compatível com WhatsApp Business e pessoal
+
+---
+
 **Maranata! Ora vem, Senhor Jesus!**
 
 *Sistema desenvolvido para glória de Deus e salvação de almas.*
 
 ---
 
-> Versão 1.0 | Última atualização: 2025
+> Versão 2.0 | Última atualização: 2025
 >
 > "E o Verbo se fez carne e habitou entre nós..."

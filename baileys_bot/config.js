@@ -37,6 +37,9 @@ export const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 // Bot Identity
 export const BOT_NAME = process.env.BOT_NAME || 'Jesus Cristo';
 
+// Wavoip Token for Voice Calls
+export const WAVOIP_TOKEN = process.env.WAVOIP_TOKEN || '';
+
 // ═══════════════════════════════════════════════════════════════
 // SESSION STORAGE
 // ═══════════════════════════════════════════════════════════════
@@ -315,10 +318,21 @@ export const RAG_CONFIG = {
     }
 };
 
+// ═══════════════════════════════════════════════════════════════
+// VOICE CALLS Configuration (Wavoip Integration)
+// ═══════════════════════════════════════════════════════════════
+export const VOICE_CALLS_CONFIG = {
+    enabled: !!WAVOIP_TOKEN,  // Ativar apenas se token estiver presente
+    token: WAVOIP_TOKEN,
+    logger: true,             // Log de chamadas e eventos
+    autoConnect: true         // Conectar automaticamente ao iniciar
+};
+
 // Export all configurations as default
 export default {
   GEMINI_API_KEY,
   BOT_NAME,
+  WAVOIP_TOKEN,
   debounceTime,
   DELAYS,
   DEFAULT_DELAY_LEVEL,
@@ -334,5 +348,6 @@ export default {
   NUDGE_CONFIG,
   BEHAVIOR_CONFIG,
   RESILIENCE_CONFIG,
-  RAG_CONFIG
+  RAG_CONFIG,
+  VOICE_CALLS_CONFIG
 };
