@@ -19,6 +19,8 @@ services:
       # As variáveis do .env serão passadas aqui
     env_file:
       - .env
+    ports:
+      - "8080:8080"
     # Limite de recursos para caber na e2-micro (Free Tier da Google)
     deploy:
       resources:

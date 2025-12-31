@@ -353,6 +353,8 @@ export function getUsuario(telefone) {
             usuario.ensinos_recentes = safeJsonParse(usuario.ensinos_recentes, [], 'array');
             usuario.desafios_realizados = safeJsonParse(usuario.desafios_realizados, [], 'array');
             usuario.video_boasvindas_enviado = !!usuario.video_boasvindas_enviado;
+            // Alias camelCase para quem usa ultimoContato
+            usuario.ultimoContato = usuario.ultimo_contato;
         }
 
         return usuario;
@@ -421,16 +423,30 @@ export function saveUsuario(userData) {
  */
 export function deleteUsuario(usuarioId) {
     return safeQuery(() => {
-        // Deleta em cascata: conversas, agendamentos, mensagens, jornada, datas especiais, padrões emocionais
-        db.prepare('DELETE FROM conversas WHERE usuario_id = ?').run(usuarioId);
-        db.prepare('DELETE FROM agendamentos WHERE usuario_id = ?').run(usuarioId);
-        db.prepare('DELETE FROM mensagens_enviadas WHERE usuario_id = ?').run(usuarioId);
-        db.prepare('DELETE FROM user_journey WHERE usuario_id = ?').run(usuarioId);
-        db.prepare('DELETE FROM user_special_dates WHERE usuario_id = ?').run(usuarioId);
-        db.prepare('DELETE FROM emotional_patterns WHERE usuario_id = ?').run(usuarioId);
-        db.prepare('DELETE FROM metricas_engajamento WHERE usuario_id = ?').run(usuarioId);
-        db.prepare('DELETE FROM semantic_memory WHERE usuario_id = ?').run(usuarioId);
-        db.prepare('DELETE FROM usuarios WHERE id = ?').run(usuarioId);
+        const usuario = db.prepare('SELECT telefone FROM usuarios WHERE id = ?').get(usuarioId);
+        if (!usuario) {
+            console.warn(`[Database] Usuario não encontrado para delete: ${usuarioId}`);
+            return false;
+        }
+
+        // Mantém as operações agrupadas para evitar deletes parciais
+        const deleteTransaction = db.transaction((id, telefone) => {
+            // Deleta em cascata: conversas, agendamentos, mensagens, jornada, datas especiais, padrões emocionais
+            db.prepare('DELETE FROM conversas WHERE usuario_id = ?').run(id);
+            db.prepare('DELETE FROM agendamentos WHERE usuario_id = ?').run(id);
+            db.prepare('DELETE FROM mensagens_enviadas WHERE usuario_id = ?').run(id);
+            db.prepare('DELETE FROM user_journey WHERE usuario_id = ?').run(id);
+            db.prepare('DELETE FROM user_special_dates WHERE usuario_id = ?').run(id);
+            db.prepare('DELETE FROM emotional_patterns WHERE usuario_id = ?').run(id);
+            db.prepare('DELETE FROM metricas_engajamento WHERE usuario_id = ?').run(id);
+
+            // semantic_memory usa jid em vez de usuario_id, então limpamos por telefone/JID
+            db.prepare('DELETE FROM semantic_memory WHERE jid = ? OR jid LIKE ?').run(telefone, `${telefone}%`);
+
+            db.prepare('DELETE FROM usuarios WHERE id = ?').run(id);
+        });
+
+        deleteTransaction(usuarioId, usuario.telefone);
         return true;
     }, false, `deleteUsuario(${usuarioId})`);
 }

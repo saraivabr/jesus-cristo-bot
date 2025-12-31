@@ -25,6 +25,17 @@ const knowledgeGraphCache = {
 const mcpOperationQueue = [];
 let isProcessingQueue = false;
 
+function normalizeLastContact(perfil) {
+    if (!perfil || typeof perfil !== 'object') return null;
+    const candidates = [perfil.ultimoContato, perfil.ultimo_contato, perfil.lastContact];
+    for (const value of candidates) {
+        if (!value) continue;
+        const ts = value instanceof Date ? value.getTime() : new Date(value).getTime();
+        if (!Number.isNaN(ts)) return ts;
+    }
+    return null;
+}
+
 /**
  * Processa a fila de operações MCP de forma assíncrona
  */
@@ -792,11 +803,11 @@ export function buildContext(perfil, isFirstContact = false) {
         // ═══════════════════════════════════════════════════════════
         // ANÁLISE DE TEMPO DESDE ÚLTIMO CONTATO
         // ═══════════════════════════════════════════════════════════
-        if (perfil?.ultimoContato && !isFirstContact) {
+        const ultimoContatoTs = normalizeLastContact(perfil);
+        if (ultimoContatoTs && !isFirstContact) {
             try {
-                const ultimoContatoDate = new Date(perfil.ultimoContato);
-                const agora = new Date();
-                const diffMs = agora - ultimoContatoDate;
+                const ultimoContatoDate = new Date(ultimoContatoTs);
+                const diffMs = Date.now() - ultimoContatoDate;
                 const diasDesde = Math.floor(diffMs / (1000 * 60 * 60 * 24));
                 const horasDesde = Math.floor(diffMs / (1000 * 60 * 60));
 
@@ -1263,6 +1274,7 @@ export function shouldFollowUp(perfil, resposta) {
         const sentimentos = Array.isArray(perfil.sentimentos) ? perfil.sentimentos : [];
         const compromissos = Array.isArray(perfil.compromissos) ? perfil.compromissos : [];
         const respostaStr = typeof resposta === 'string' ? resposta : '';
+        const ultimoContatoTs = normalizeLastContact(perfil);
 
         // Situacoes que exigem follow-up
         const condicoesFollowUp = {
@@ -1276,10 +1288,10 @@ export function shouldFollowUp(perfil, resposta) {
                             respostaStr.toLowerCase().includes('bencao')),
 
             // Primeiro contato ou retorno apos longo periodo
-            primeiroContato: !perfil.ultimoContato,
+            primeiroContato: !ultimoContatoTs,
 
-            retornoLongo: perfil.ultimoContato &&
-                          (Date.now() - new Date(perfil.ultimoContato).getTime()) > (7 * 24 * 60 * 60 * 1000), // 7 dias
+            retornoLongo: ultimoContatoTs &&
+                          (Date.now() - ultimoContatoTs) > (7 * 24 * 60 * 60 * 1000), // 7 dias
 
             // Pedido de ajuda especifica
             pedidoAjuda: perfil.ultimaPergunta && typeof perfil.ultimaPergunta === 'string' &&
