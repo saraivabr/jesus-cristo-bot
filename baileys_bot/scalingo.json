@@ -1,0 +1,38 @@
+{
+  "name": "jesus-pastoral-bot",
+  "description": "Jesus Cristo - O Bom Pastor Digital | WhatsApp Bot com Baileys + Gemini",
+  "repository": "https://github.com/seu-usuario/jesus-bot",
+  "keywords": ["whatsapp", "bot", "baileys", "gemini", "jesus"],
+  "env": {
+    "GEMINI_API_KEY": {
+      "description": "Chave da API do Google Gemini",
+      "required": true
+    },
+    "BOT_NAME": {
+      "description": "Nome do bot",
+      "value": "Jesus Cristo"
+    },
+    "NODE_ENV": {
+      "description": "Ambiente de execucao",
+      "value": "production"
+    },
+    "DEBOUNCE_TIME": {
+      "description": "Tempo de debounce em ms",
+      "value": "10000"
+    }
+  },
+  "addons": [
+    "postgresql:postgresql-starter-512",
+    "redis:redis-starter-64",
+    "mongodb:mongo-starter-256"
+  ],
+  "formation": {
+    "web": {
+      "size": "S",
+      "amount": 1
+    }
+  },
+  "scripts": {
+    "postdeploy": "npm run migrate"
+  }
+}

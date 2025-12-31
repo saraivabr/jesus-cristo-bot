@@ -1,19 +1,52 @@
 /**
  * Baileys Bot Configuration
  * Jesus Cristo AI Bot - Divine Communication System
+ *
+ * Suporta deploy local (SQLite) e Scalingo (PostgreSQL/Redis/MongoDB)
  */
 
 import 'dotenv/config';
 
-// API Keys (from .env)
+// ═══════════════════════════════════════════════════════════════
+// DETECTAR AMBIENTE (Local vs Scalingo)
+// ═══════════════════════════════════════════════════════════════
+
+export const IS_SCALINGO = !!(
+    process.env.SCALINGO_POSTGRESQL_URL ||
+    process.env.SCALINGO_MONGO_URL ||
+    process.env.SCALINGO_REDIS_URL
+);
+
+export const NODE_ENV = process.env.NODE_ENV || 'development';
+export const IS_PRODUCTION = NODE_ENV === 'production';
+
+// ═══════════════════════════════════════════════════════════════
+// DATABASE URLS (Scalingo add-ons)
+// ═══════════════════════════════════════════════════════════════
+
+export const DATABASE_URL = process.env.SCALINGO_POSTGRESQL_URL || process.env.DATABASE_URL || null;
+export const MONGO_URL = process.env.SCALINGO_MONGO_URL || process.env.MONGO_URL || 'mongodb://localhost:27017';
+export const REDIS_URL = process.env.SCALINGO_REDIS_URL || process.env.REDIS_URL || 'redis://localhost:6379';
+
+// ═══════════════════════════════════════════════════════════════
+// API Keys
+// ═══════════════════════════════════════════════════════════════
+
 export const GEMINI_API_KEY = process.env.GEMINI_API_KEY || '';
 
 // Bot Identity
 export const BOT_NAME = process.env.BOT_NAME || 'Jesus Cristo';
 
+// ═══════════════════════════════════════════════════════════════
+// SESSION STORAGE
+// ═══════════════════════════════════════════════════════════════
+
+// No Scalingo, usa MongoDB para sessão; Local usa filesystem
+export const SESSION_STORAGE = IS_SCALINGO ? 'mongodb' : 'file';
+export const SESSION_ID = process.env.SESSION_ID || 'jesus_bot_session';
+
 // Debounce - tempo de espera para juntar mensagens consecutivas (ms)
-// 5 segundos para dar tempo da pessoa terminar de digitar
-export const debounceTime = parseInt(process.env.DEBOUNCE_TIME) || 5000;
+export const debounceTime = parseInt(process.env.DEBOUNCE_TIME) || 10000;
 
 // Humanization Delays (milliseconds)
 export const DELAYS = {
@@ -39,7 +72,7 @@ export const DEFAULT_DELAY_LEVEL = 'medium';
 
 // Text-to-Speech Configuration
 export const TTS_CONFIG = {
-  enabled: true,
+  enabled: false, // edge-tts não está instalado por padrão; mantenha desativado
   language: 'pt-BR',
   voice: 'pt-BR-Wavenet-A', // Google TTS voice
   speed: 1.0,
@@ -144,6 +177,61 @@ export const BAILEYS_CONFIG = {
   }
 };
 
+// Nudge Configuration - Follow-up após leitura sem resposta
+export const NUDGE_CONFIG = {
+    enabled: true,
+    // Tempo após detectar que usuário está online sem responder
+    delayAfterOnline: {
+        min: 45000,     // 45 segundos
+        max: 120000,    // 2 minutos
+        variance: 0.3   // ±30% de variação para naturalidade
+    },
+    // Probabilidade de enviar nudge (não enviar sempre)
+    probability: 0.6,   // 60% das vezes
+    // Máximo de nudges por dia por usuário
+    maxPerDay: 2,
+    // Não enviar nudge se usuário está digitando
+    skipIfTyping: true,
+    // Mensagens de nudge minimalistas e naturais
+    messages: [
+        '...',
+        'Oi?',
+        'Tô aqui.',
+        'Me conta.',
+        'E aí?'
+    ],
+    // Respeitar quiet hours
+    respectQuietHours: true,
+    // Tempo mínimo desde envio da mensagem original
+    minTimeSinceSent: 30000,  // 30 segundos
+    // Não enviar nudge se mensagem original foi há mais de X
+    maxTimeSinceSent: 3600000 // 1 hora
+};
+
+// Resilience Configuration
+export const RESILIENCE_CONFIG = {
+    // Gemini
+    geminiTimeout: 25000,
+    geminiMaxRetries: 2,
+    geminiCircuitBreakerThreshold: 5,
+    geminiCircuitBreakerReset: 300000, // 5 minutos
+
+    // Baileys/WhatsApp
+    maxReconnectAttempts: 5,
+    reconnectBaseDelay: 5000,
+    reconnectMaxDelay: 60000,
+
+    // Database
+    dbBusyTimeout: 5000,
+
+    // Scheduler
+    schedulerRetryAttempts: 3,
+    schedulerRetryBaseDelay: 1000,
+
+    // Logging
+    logLevel: process.env.LOG_LEVEL || 'info',
+};
+
 // Export all configurations as default
 export default {
   GEMINI_API_KEY,
@@ -159,5 +247,7 @@ export default {
   LOGGING,
   MEMORY_CONFIG,
   GEMINI_CONFIG,
-  BAILEYS_CONFIG
+  BAILEYS_CONFIG,
+  NUDGE_CONFIG,
+  RESILIENCE_CONFIG
 };
