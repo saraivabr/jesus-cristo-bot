@@ -1,0 +1,397 @@
+{
+  "metadata": {
+    "description": "Exemplos reais de eventos WAHA para testes",
+    "version": "1.0",
+    "waha_api_version": "0.30+",
+    "documentation": "https://waha.devlike.ru/"
+  },
+
+  "events": [
+    {
+      "id": "message_text_simple",
+      "name": "Mensagem de texto simples",
+      "description": "Evento de mensagem de texto básico de usuário individual",
+      "event": "message",
+      "data": {
+        "id": "wamid.HBEUGVlINzIyNDAxNzAyNjM2MzEFAAE",
+        "timestamp": 1641234567000,
+        "from": "5511999999999",
+        "fromMe": false,
+        "body": "Olá, tudo bem?",
+        "type": "text",
+        "pushName": "João Silva",
+        "hasMedia": false,
+        "hasQuotedMsg": false
+      }
+    },
+
+    {
+      "id": "message_text_normalized",
+      "name": "Mensagem de texto com JID normalizado",
+      "description": "Evento com JID já em formato WhatsApp @s.whatsapp.net",
+      "event": "message",
+      "data": {
+        "id": "wamid.HBEUGVlINzIyNDAxNzAyNjM2MzEFAAE",
+        "timestamp": 1641234568000,
+        "from": "5511999999999@s.whatsapp.net",
+        "fromMe": false,
+        "body": "Preciso de ajuda com minha fé",
+        "type": "text",
+        "pushName": "Maria Santos",
+        "hasMedia": false,
+        "hasQuotedMsg": false
+      }
+    },
+
+    {
+      "id": "message_emoji",
+      "name": "Mensagem com emojis e caracteres especiais",
+      "description": "Teste de preservação de emojis e acentuação",
+      "event": "message",
+      "data": {
+        "id": "wamid.HBEUGVlINzIyNDAxNzAyNjM2MzEFAAE",
+        "timestamp": 1641234569000,
+        "from": "5512888888888",
+        "fromMe": false,
+        "body": "Deus te abençoe! 🙏❤️ Estou em paz com meu coração",
+        "type": "text",
+        "pushName": "Pedro Costa",
+        "hasMedia": false,
+        "hasQuotedMsg": false
+      }
+    },
+
+    {
+      "id": "message_group",
+      "name": "Mensagem em grupo",
+      "description": "Evento de mensagem vindo de um grupo WhatsApp",
+      "event": "message",
+      "data": {
+        "id": "wamid.HBEUGVlINzIyNDAxNzAyNjM2MzEFAAE",
+        "timestamp": 1641234570000,
+        "from": "120363999999999-1234567890",
+        "fromMe": false,
+        "body": "Alguém aqui para orar comigo?",
+        "type": "text",
+        "pushName": "Ana Silva",
+        "participant": "5511888888888",
+        "hasMedia": false,
+        "hasQuotedMsg": false
+      }
+    },
+
+    {
+      "id": "message_audio",
+      "name": "Mensagem de áudio",
+      "description": "Evento de mensagem de áudio (sem transcrição automática)",
+      "event": "message",
+      "data": {
+        "id": "wamid.HBEUGVlINzIyNDAxNzAyNjM2MzEFAAE",
+        "timestamp": 1641234571000,
+        "from": "5513777777777",
+        "fromMe": false,
+        "type": "audio",
+        "hasMedia": true,
+        "mediaUrl": "https://example.com/audio/msg_123.ogg",
+        "mediaType": "audio/ogg",
+        "mediaDuration": 15,
+        "pushName": "Lucas Ferreira",
+        "hasQuotedMsg": false
+      }
+    },
+
+    {
+      "id": "message_location",
+      "name": "Mensagem de localização",
+      "description": "Evento com informações de localização geográfica",
+      "event": "message",
+      "data": {
+        "id": "wamid.HBEUGVlINzIyNDAxNzAyNjM2MzEFAAE",
+        "timestamp": 1641234572000,
+        "from": "5514666666666",
+        "fromMe": false,
+        "type": "location",
+        "hasMedia": false,
+        "latitude": -23.5505,
+        "longitude": -46.6333,
+        "name": "Igreja São Paulo",
+        "address": "Avenida Paulista, São Paulo, SP",
+        "pushName": "Carlos Mendes",
+        "hasQuotedMsg": false
+      }
+    },
+
+    {
+      "id": "message_image",
+      "name": "Mensagem com imagem",
+      "description": "Evento de imagem com caption opcional",
+      "event": "message",
+      "data": {
+        "id": "wamid.HBEUGVlINzIyNDAxNzAyNjM2MzEFAAE",
+        "timestamp": 1641234573000,
+        "from": "5515555555555",
+        "fromMe": false,
+        "type": "image",
+        "body": "Foto da minha família",
+        "hasMedia": true,
+        "mediaUrl": "https://example.com/media/img_123.jpg",
+        "mediaType": "image/jpeg",
+        "pushName": "Fernanda Dias",
+        "hasQuotedMsg": false
+      }
+    },
+
+    {
+      "id": "message_contact",
+      "name": "Mensagem com contato",
+      "description": "Evento compartilhando informações de contato",
+      "event": "message",
+      "data": {
+        "id": "wamid.HBEUGVlINzIyNDAxNzAyNjM2MzEFAAE",
+        "timestamp": 1641234574000,
+        "from": "5516444444444",
+        "fromMe": false,
+        "type": "vcard",
+        "body": "vCard data",
+        "hasMedia": false,
+        "vcard": {
+          "name": "Pastor João",
+          "phone": "5511987654321"
+        },
+        "pushName": "Roberto Santos",
+        "hasQuotedMsg": false
+      }
+    },
+
+    {
+      "id": "message_long_text",
+      "name": "Mensagem com texto muito longo",
+      "description": "Teste de mensagem que ultrapassa limite padrão",
+      "event": "message",
+      "data": {
+        "id": "wamid.HBEUGVlINzIyNDAxNzAyNjM2MzEFAAE",
+        "timestamp": 1641234575000,
+        "from": "5517333333333",
+        "fromMe": false,
+        "body": "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.",
+        "type": "text",
+        "pushName": "Beatriz Costa",
+        "hasMedia": false,
+        "hasQuotedMsg": false
+      }
+    },
+
+    {
+      "id": "message_ack",
+      "name": "Confirmação de entrega (ACK)",
+      "description": "Evento de confirmação que mensagem foi entregue",
+      "event": "message_ack",
+      "data": {
+        "id": "wamid.HBEUGVlINzIyNDAxNzAyNjM2MzEFAAE",
+        "timestamp": 1641234576000,
+        "to": "5511999999999",
+        "status": "delivered",
+        "ackCount": 1
+      }
+    },
+
+    {
+      "id": "message_read",
+      "name": "Confirmação de leitura",
+      "description": "Evento indicando que mensagem foi lida",
+      "event": "message_ack",
+      "data": {
+        "id": "wamid.HBEUGVlINzIyNDAxNzAyNjM2MzEFAAE",
+        "timestamp": 1641234577000,
+        "to": "5511999999999",
+        "status": "read",
+        "ackCount": 2
+      }
+    },
+
+    {
+      "id": "crisis_detected",
+      "name": "Mensagem detectando crise potencial",
+      "description": "Mensagem com palavras-chave que indicam urgência/crise",
+      "event": "message",
+      "data": {
+        "id": "wamid.HBEUGVlINzIyNDAxNzAyNjM2MzEFAAE",
+        "timestamp": 1641234578000,
+        "from": "5518222222222",
+        "fromMe": false,
+        "body": "Preciso de ajuda urgente, estou pensando em morte",
+        "type": "text",
+        "pushName": "Juliana Oliveira",
+        "hasMedia": false,
+        "hasQuotedMsg": false
+      }
+    },
+
+    {
+      "id": "follow_up_response",
+      "name": "Resposta a um follow-up agendado",
+      "description": "Usuário respondendo a uma mensagem de acompanhamento",
+      "event": "message",
+      "data": {
+        "id": "wamid.HBEUGVlINzIyNDAxNzAyNjM2MzEFAAE",
+        "timestamp": 1641234579000,
+        "from": "5519111111111",
+        "fromMe": false,
+        "body": "Sim, estou melhor depois de nossas conversas",
+        "type": "text",
+        "pushName": "Rafael Gomes",
+        "hasMedia": false,
+        "hasQuotedMsg": true,
+        "quotedMsg": {
+          "id": "wamid.QUOTED123",
+          "body": "Oi Rafael, como você está?"
+        }
+      }
+    }
+  ],
+
+  "fixtures": {
+    "validPayload": {
+      "event": "message",
+      "data": {
+        "from": "5511999999999@s.whatsapp.net",
+        "body": "Teste válido",
+        "type": "text",
+        "timestamp": 1641234567000,
+        "pushName": "Test User",
+        "id": "msg_test_001"
+      }
+    },
+
+    "invalidPayload_missingEvent": {
+      "data": {
+        "from": "5511999999999@s.whatsapp.net",
+        "body": "Sem event"
+      }
+    },
+
+    "invalidPayload_missingData": {
+      "event": "message"
+    },
+
+    "invalidPayload_missingFrom": {
+      "event": "message",
+      "data": {
+        "body": "Sem from"
+      }
+    },
+
+    "invalidPayload_missingBody": {
+      "event": "message",
+      "data": {
+        "from": "5511999999999@s.whatsapp.net"
+      }
+    },
+
+    "edgeCase_emptyBody": {
+      "event": "message",
+      "data": {
+        "from": "5511999999999@s.whatsapp.net",
+        "body": "",
+        "type": "text",
+        "timestamp": 1641234567000
+      }
+    },
+
+    "edgeCase_whitespaceBody": {
+      "event": "message",
+      "data": {
+        "from": "5511999999999@s.whatsapp.net",
+        "body": "   \n\t   ",
+        "type": "text",
+        "timestamp": 1641234567000
+      }
+    },
+
+    "edgeCase_noPushName": {
+      "event": "message",
+      "data": {
+        "from": "5511999999999@s.whatsapp.net",
+        "body": "Sem pushName",
+        "type": "text",
+        "timestamp": 1641234567000
+      }
+    },
+
+    "jidFormats": {
+      "individual_normalized": "5511999999999@s.whatsapp.net",
+      "individual_raw": "5511999999999",
+      "group_normalized": "120363999999999-1234567890@g.us",
+      "group_raw": "120363999999999-1234567890"
+    }
+  },
+
+  "testScenarios": {
+    "scenario_multiuser_conversation": {
+      "description": "Simula conversa com múltiplos usuários",
+      "steps": [
+        {
+          "id": "step_1",
+          "description": "User A envia mensagem inicial",
+          "event": "message",
+          "data": {
+            "from": "5511999999999@s.whatsapp.net",
+            "body": "Olá, preciso conversar",
+            "type": "text",
+            "timestamp": 1641234567000,
+            "pushName": "User A"
+          }
+        },
+        {
+          "id": "step_2",
+          "description": "Bot responde",
+          "type": "bot_response",
+          "to": "5511999999999@s.whatsapp.net",
+          "body": "Olá! Como posso ajudar?"
+        },
+        {
+          "id": "step_3",
+          "description": "User B envia mensagem",
+          "event": "message",
+          "data": {
+            "from": "5512888888888@s.whatsapp.net",
+            "body": "Tenho dúvidas sobre fé",
+            "type": "text",
+            "timestamp": 1641234568000,
+            "pushName": "User B"
+          }
+        }
+      ]
+    },
+
+    "scenario_group_notification": {
+      "description": "Bot postando notificação em grupo",
+      "webhook": {
+        "event": "message",
+        "data": {
+          "from": "120363999999999-1234567890@g.us",
+          "body": "Alguém quer participar do grupo de oração?",
+          "type": "text",
+          "timestamp": 1641234567000,
+          "pushName": "Group Member",
+          "participant": "5511999999999"
+        }
+      }
+    },
+
+    "scenario_crisis_response": {
+      "description": "Detecção de crise e resposta imediata",
+      "webhook": {
+        "event": "message",
+        "data": {
+          "from": "5513777777777@s.whatsapp.net",
+          "body": "Não aguento mais, quero desistir de tudo",
+          "type": "text",
+          "timestamp": 1641234567000,
+          "pushName": "Usuario em Crise"
+        }
+      },
+      "expectedResponse": "immediate_crisis_protocol"
+    }
+  }
+}
