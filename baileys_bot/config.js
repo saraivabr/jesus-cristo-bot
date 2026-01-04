@@ -46,41 +46,29 @@ export const SESSION_STORAGE = IS_SCALINGO ? 'mongodb' : 'file';
 export const SESSION_ID = process.env.SESSION_ID || 'jesus_bot_session';
 
 // Debounce - tempo de espera para juntar mensagens consecutivas (ms)
-export const debounceTime = parseInt(process.env.DEBOUNCE_TIME) || 10000;
+export const debounceTime = parseInt(process.env.DEBOUNCE_TIME) || 1500;
 
-// Humanization Delays (milliseconds)
+// Humanization Delays (milliseconds) - REDUZIDOS para resposta rápida
 export const DELAYS = {
   low: {
-    min: 500,
-    max: 1000,
-    typing: 300
+    min: 100,
+    max: 250,
+    typing: 100
   },
   medium: {
-    min: 1000,
-    max: 2500,
-    typing: 800
+    min: 200,
+    max: 400,
+    typing: 150
   },
   high: {
-    min: 2000,
-    max: 4000,
-    typing: 1500
+    min: 300,
+    max: 600,
+    typing: 250
   }
 };
 
 // Default delay level
 export const DEFAULT_DELAY_LEVEL = 'medium';
-
-// Text-to-Speech Configuration
-export const TTS_CONFIG = {
-  enabled: false, // edge-tts não está instalado por padrão; mantenha desativado
-  language: 'pt-BR',
-  voice: 'pt-BR-Wavenet-A', // Google TTS voice
-  speed: 1.0,
-  pitch: 0,
-  audioFormat: 'mp3',
-  maxMessageLength: 500, // Maximum characters for TTS conversion
-  fallbackToText: true // Send text if TTS fails
-};
 
 // Follow-up Scheduler Configuration
 export const SCHEDULER_CONFIG = {
@@ -131,11 +119,16 @@ export const RATE_LIMIT = {
 
 // Logging Configuration
 export const LOGGING = {
-  level: 'info', // 'debug', 'info', 'warn', 'error'
-  logToFile: true,
-  logPath: './logs',
+  level: process.env.LOG_LEVEL || 'info', // 'debug', 'info', 'warn', 'error'
+  logToFile: IS_PRODUCTION ? true : false,
+  logPath: process.env.LOG_PATH || './logs',
   maxLogSize: 10485760, // 10MB
-  maxLogFiles: 5
+  maxLogFiles: 5,
+  // JSON output for Scalingo/production log aggregation
+  format: IS_PRODUCTION ? 'json' : 'pretty',
+  // Production: output to stdout for Scalingo log drain
+  // Development: output to file
+  transport: IS_PRODUCTION ? 'stdout' : 'file'
 };
 
 // Memory Integration (MCP)
@@ -322,7 +315,6 @@ export default {
   debounceTime,
   DELAYS,
   DEFAULT_DELAY_LEVEL,
-  TTS_CONFIG,
   SCHEDULER_CONFIG,
   MESSAGE_CONFIG,
   SESSION_CONFIG,

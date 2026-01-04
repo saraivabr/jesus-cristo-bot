@@ -1,1 +1,4 @@
+# Jesus Cristo Bot - Scalingo Procfile
+# Entry point for production deployments
+# Validates environment, detects Scalingo add-ons, starts Express + Scheduler
 web: node indexScalingo.js
