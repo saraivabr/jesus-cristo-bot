@@ -1,134 +1,248 @@
 /**
  * WhatsApp Sender - Jesus Cristo Bot
- * Funções de envio de mensagens com comportamento humanizado.
+ * Funções de envio de mensagens com comportamento humanizado via WAHA HTTP API.
+ *
+ * Utiliza WAHA HTTP API para envio de mensagens com:
+ * - Delays humanizados via humanizer.js
+ * - Fragmentação automática de mensagens longas
+ * - Retry logic com backoff exponencial
+ * - Rastreamento de comportamento
  */
 
-import { readFile } from 'fs/promises';
-import { existsSync } from 'fs';
 import * as humanizer from './humanizer.js';
 import * as behaviorAnalyzer from './behaviorAnalyzer.js';
 import * as db from './database.js';
+import { cleanBrokenFormatting } from './flowUtils.js';
+import * as wahaClient from './wahaClient.js';
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+// Configuração de retry
+const RETRY_CONFIG = {
+    maxAttempts: 3,
+    initialDelay: 1000,    // 1 segundo
+    maxDelay: 5000,        // 5 segundos
+    backoffMultiplier: 2
+};
+
 /**
- * Envia mensagem com presença de "digitando" humanizada
+ * Envia mensagem com delay humanizado via WAHA HTTP API
+ *
+ * @param {string} phone - Número de telefone (JID)
+ * @param {string} text - Conteúdo da mensagem
+ * @param {string} complexity - Complexidade da resposta ('low'|'medium'|'high')
+ * @returns {Promise<boolean>} Sucesso do envio
  */
-export async function sendMessage(sock, phone, text, complexity = 'medium') {
+export async function sendMessage(phone, text, complexity = 'medium') {
+    if (!phone || !text) {
+        console.error('❌ sendMessage: phone e text são obrigatórios');
+        return false;
+    }
+
     try {
-        await sock.presenceSubscribe(phone);
+        // Calcula delay de digitação humanizado
         const typingDelay = humanizer.calculateTypingDelay(text, complexity);
-        await sock.sendPresenceUpdate('composing', phone);
         await sleep(typingDelay);
-        await sock.sendPresenceUpdate('paused', phone);
-        await sock.sendMessage(phone, { text });
-        console.log(`✅ [${typingDelay}ms] Mensagem enviada para ${phone}`);
+
+        // Envia via WAHA com retry
+        const success = await sendWithRetry(phone, text);
+
+        if (success) {
+            console.log(`✅ [${typingDelay}ms] Mensagem enviada para ${phone}`);
+        } else {
+            console.error(`❌ Falha ao enviar mensagem para ${phone} após ${RETRY_CONFIG.maxAttempts} tentativas`);
+        }
+
+        return success;
     } catch (error) {
         console.error(`❌ Erro ao enviar mensagem para ${phone}:`, error.message);
+        return false;
     }
 }
 
 /**
- * Envia mensagens fragmentadas com delays humanizados
+ * Envia mensagem com retry logic e backoff exponencial
+ *
+ * @private
  */
-export async function sendFragmentedMessages(sock, phone, messages, initialComplexity = 'medium', options = {}) {
-    console.log(`📨 Enviando ${messages.length} fragmentos para ${phone}`);
+async function sendWithRetry(phone, text, attempt = 1) {
+    try {
+        const success = await wahaClient.sendMessage(phone, text);
+        if (success) return true;
 
-    for (let i = 0; i < messages.length; i++) {
+        // Se não sucesso e temos tentativas, retry com backoff
+        if (attempt < RETRY_CONFIG.maxAttempts) {
+            const delay = Math.min(
+                RETRY_CONFIG.initialDelay * Math.pow(RETRY_CONFIG.backoffMultiplier, attempt - 1),
+                RETRY_CONFIG.maxDelay
+            );
+            console.log(`⏳ Retry ${attempt}/${RETRY_CONFIG.maxAttempts - 1} em ${delay}ms...`);
+            await sleep(delay);
+            return sendWithRetry(phone, text, attempt + 1);
+        }
+
+        return false;
+    } catch (error) {
+        console.error(`❌ sendWithRetry (tentativa ${attempt}):`, error.message);
+        if (attempt < RETRY_CONFIG.maxAttempts) {
+            const delay = Math.min(
+                RETRY_CONFIG.initialDelay * Math.pow(RETRY_CONFIG.backoffMultiplier, attempt - 1),
+                RETRY_CONFIG.maxDelay
+            );
+            await sleep(delay);
+            return sendWithRetry(phone, text, attempt + 1);
+        }
+        return false;
+    }
+}
+
+/**
+ * Envia mensagens fragmentadas com delays humanizados via WAHA HTTP API
+ *
+ * @param {string} phone - Número de telefone (JID)
+ * @param {string[]} messages - Array de mensagens/fragmentos
+ * @param {string} initialComplexity - Complexidade da primeira mensagem ('low'|'medium'|'high')
+ * @param {Object} options - Opções adicionais (usuarioId para rastreamento)
+ * @returns {Promise<boolean>} Sucesso do envio de todos os fragmentos
+ */
+export async function sendFragmentedMessages(phone, messages, initialComplexity = 'medium', options = {}) {
+    if (!phone || !messages || messages.length === 0) {
+        console.error('❌ sendFragmentedMessages: phone e messages (não vazio) são obrigatórios');
+        return false;
+    }
+
+    // Limpa formatação quebrada e filtra mensagens vazias
+    const cleanedMessages = messages
+        .map(m => cleanBrokenFormatting(m))
+        .filter(m => m && m.trim().length > 0);
+
+    if (cleanedMessages.length === 0) {
+        console.warn('⚠️ Nenhuma mensagem válida para enviar');
+        return false;
+    }
+
+    console.log(`📨 Enviando ${cleanedMessages.length} fragmentos para ${phone}`);
+
+    let allSuccess = true;
+
+    for (let i = 0; i < cleanedMessages.length; i++) {
         const complexity = i === 0 ? initialComplexity : 'low';
-        await sendMessage(sock, phone, messages[i], complexity);
+        const success = await sendMessage(phone, cleanedMessages[i], complexity);
 
-        if (i < messages.length - 1) {
-            const fragmentDelay = humanizer.calculateFragmentDelay(messages[i + 1]);
+        if (!success) {
+            allSuccess = false;
+            console.error(`❌ Falha ao enviar fragmento ${i + 1}/${cleanedMessages.length}`);
+        }
+
+        // Delay humanizado entre fragmentos
+        if (i < cleanedMessages.length - 1) {
+            const fragmentDelay = humanizer.calculateFragmentDelay(cleanedMessages[i + 1]);
             await sleep(fragmentDelay);
         }
     }
 
+    // Registra envio no comportamento
     behaviorAnalyzer.onBotMessageSent(phone);
 
-    if (options.usuarioId && messages.length > 0) {
+    // Registra na base de dados se usuarioId fornecido
+    if (options.usuarioId && cleanedMessages.length > 0) {
         try {
             db.addMensagemEnviada({
                 usuarioId: options.usuarioId,
                 messageKey: null,
                 jid: phone,
-                conteudo: messages[messages.length - 1]?.substring(0, 100)
+                conteudo: cleanedMessages[cleanedMessages.length - 1]?.substring(0, 100)
             });
-            await sock.presenceSubscribe(phone);
         } catch (e) {
             console.warn('[Sender] Erro ao registrar mensagem:', e.message);
         }
     }
+
+    return allSuccess;
 }
 
 /**
- * Envia mensagem como REPLY
+ * Envia mensagem de texto simples (compatível com WAHA HTTP API)
+ *
+ * Esta é a função primária para envio via WAHA.
+ * WAHA HTTP básico não suporta:
+ * - Replies com quoted messages
+ * - Áudio e vídeo
+ * - Botões e menus interativos
+ * - Presence updates
+ *
+ * Para esses recursos, use fragmentação de texto.
+ *
+ * @param {string} phone - Número de telefone (JID)
+ * @param {string} text - Conteúdo de texto simples
+ * @param {string} complexity - Complexidade ('low'|'medium'|'high')
+ * @returns {Promise<boolean>} Sucesso do envio
  */
-export async function sendReply(sock, phone, text, quotedMessage, complexity = 'medium') {
-    try {
-        await sock.presenceSubscribe(phone);
-        const typingDelay = humanizer.calculateTypingDelay(text, complexity);
-        await sock.sendPresenceUpdate('composing', phone);
-        await sleep(typingDelay);
-        await sock.sendPresenceUpdate('paused', phone);
-
-        await sock.sendMessage(phone, {
-            text,
-            quoted: quotedMessage
-        });
-        console.log(`💬 [${typingDelay}ms] Reply enviado`);
-    } catch (error) {
-        console.error(`❌ Erro ao enviar reply:`, error.message);
-        await sendMessage(sock, phone, text, complexity);
-    }
+export async function sendTextMessage(phone, text, complexity = 'medium') {
+    return sendMessage(phone, text, complexity);
 }
 
 /**
- * Envia áudio com simulação de gravação
+ * Fragmenta mensagem longa em múltiplos envios
+ *
+ * Quebra mensagens grandes automaticamente usando humanizer.fragmentMessages()
+ *
+ * @param {string} phone - Número de telefone (JID)
+ * @param {string} text - Texto potencialmente longo
+ * @param {string} initialComplexity - Complexidade ('low'|'medium'|'high')
+ * @param {Object} options - Opções adicionais
+ * @returns {Promise<boolean>} Sucesso do envio
  */
-export async function sendAudio(sock, phone, audioBuffer) {
-    try {
-        await sock.presenceSubscribe(phone);
-        await sock.sendPresenceUpdate('recording', phone);
-        const recordingTime = 1500 + Math.random() * 1500;
-        await sleep(recordingTime);
-        await sock.sendMessage(phone, {
-            audio: audioBuffer,
-            mimetype: 'audio/ogg; codecs=opus',
-            ptt: true
-        });
-        await sock.sendPresenceUpdate('paused', phone);
-        console.log(`🎤 [${Math.floor(recordingTime)}ms] Áudio enviado`);
-    } catch (error) {
-        console.error(`❌ Erro ao enviar áudio:`, error.message);
-    }
-}
-
-/**
- * Envia vídeo de boas-vindas
- */
-export async function sendWelcomeVideo(sock, phone, videoPath) {
-    if (!existsSync(videoPath)) {
-        console.warn('⚠️ Vídeo de boas-vindas não encontrado em', videoPath);
+export async function sendLongMessage(phone, text, initialComplexity = 'medium', options = {}) {
+    if (!phone || !text) {
+        console.error('❌ sendLongMessage: phone e text são obrigatórios');
         return false;
     }
 
-    try {
-        await sock.presenceSubscribe(phone);
-        await sock.sendPresenceUpdate('recording', phone);
-        await sleep(800 + Math.random() * 1200);
+    // Fragmenta texto longo usando humanizer
+    const fragments = humanizer.fragmentMessages(text);
 
-        const videoBuffer = await readFile(videoPath);
-        await sock.sendMessage(phone, {
-            video: videoBuffer,
-            caption: 'Eu sou Jesus Cristo. Vem cá, quero te ouvir.',
-            gifPlayback: false
-        });
-
-        await sock.sendPresenceUpdate('paused', phone);
-        return true;
-    } catch (error) {
-        console.error('❌ Erro ao enviar vídeo de boas-vindas:', error.message);
+    if (fragments.length === 0) {
+        console.warn('⚠️ Nenhum fragmento gerado de:', text.substring(0, 50));
         return false;
     }
+
+    // Se apenas um fragmento, envia direto
+    if (fragments.length === 1) {
+        return sendMessage(phone, fragments[0], initialComplexity);
+    }
+
+    // Múltiplos fragmentos: usa fragmentação humanizada
+    return sendFragmentedMessages(phone, fragments, initialComplexity, options);
+}
+
+/**
+ * Envia mensagem de opções em formato texto
+ *
+ * Simula menu de opções usando numeração, já que WAHA não suporta botões.
+ *
+ * @param {string} phone - Número de telefone (JID)
+ * @param {string} title - Título da pergunta/menu
+ * @param {string[]} options - Array de opções
+ * @param {string} description - Descrição adicional (opcional)
+ * @returns {Promise<boolean>} Sucesso do envio
+ */
+export async function sendOptionsMessage(phone, title, options, description = '') {
+    if (!phone || !title || !options || options.length === 0) {
+        console.error('❌ sendOptionsMessage: phone, title e options (não vazio) são obrigatórios');
+        return false;
+    }
+
+    // Constrói mensagem com numeração
+    let message = title;
+    if (description) {
+        message += '\n\n' + description;
+    }
+
+    message += '\n\n' + options
+        .map((opt, i) => `${i + 1}. ${opt}`)
+        .join('\n');
+
+    console.log(`📋 Enviando menu de opções para ${phone}`);
+    return sendMessage(phone, message, 'medium');
 }
