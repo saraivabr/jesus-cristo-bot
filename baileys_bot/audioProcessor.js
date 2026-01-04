@@ -18,8 +18,10 @@ import { join, dirname } from 'path';
 import { tmpdir } from 'os';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI } from '@google/genai';
-import { downloadMediaMessage } from '@whiskeysockets/baileys';
-import config, { TTS_CONFIG } from './config.js';
+import config from './config.js';
+
+// TTS desativado
+const TTS_CONFIG = { enabled: false, maxMessageLength: 500 };
 
 const execAsync = promisify(exec);
 const __filename = fileURLToPath(import.meta.url);
