@@ -131,7 +131,21 @@ async function updateDeepProfile(jid) {
             generationConfig: { responseMimeType: 'application/json' }
         });
 
-        const profile = JSON.parse(result.response.text());
+        let profile;
+        try {
+            // Handle different API response structures
+            const responseText = result?.response?.text?.() ||
+                                 result?.response?.candidates?.[0]?.content?.parts?.[0]?.text ||
+                                 null;
+            if (!responseText) {
+                console.warn('[DeepMemory] No response text from Gemini');
+                return;
+            }
+            profile = JSON.parse(responseText);
+        } catch (parseError) {
+            console.error('[DeepMemory] Failed to parse profile JSON:', parseError.message);
+            return;
+        }
 
         db.prepare(`
             INSERT OR REPLACE INTO user_deep_profile 
@@ -194,16 +208,27 @@ export async function getRelevantMemories(jid, currentMessage) {
     const queryEmbedding = await getEmbedding(currentMessage, 'RETRIEVAL_QUERY');
     let episodicMemories = [];
 
-    if (queryEmbedding) {
+    if (queryEmbedding && queryEmbedding.length > 0) {
         const allMemories = db.prepare('SELECT summary, embedding, timestamp FROM semantic_memories WHERE jid = ?').all(jid);
-        
-        episodicMemories = allMemories.map(m => ({
-            ...m,
-            similarity: cosineSimilarity(queryEmbedding, JSON.parse(m.embedding))
-        }))
-        .sort((a, b) => b.similarity - a.similarity)
-        .slice(0, 4) // Top 4 memórias relevantes
-        .filter(m => m.similarity > 0.45); // Filtro de relevância
+
+        episodicMemories = allMemories
+            .map(m => {
+                try {
+                    const embeddingVector = JSON.parse(m.embedding);
+                    if (!embeddingVector || !Array.isArray(embeddingVector)) return null;
+                    return {
+                        ...m,
+                        similarity: cosineSimilarity(queryEmbedding, embeddingVector)
+                    };
+                } catch (e) {
+                    console.warn('[DeepMemory] Failed to parse embedding:', e.message);
+                    return null;
+                }
+            })
+            .filter(m => m !== null)
+            .sort((a, b) => b.similarity - a.similarity)
+            .slice(0, 4)
+            .filter(m => m.similarity > 0.45);
     }
 
     return {

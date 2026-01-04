@@ -307,6 +307,260 @@ export function phoneToJid(phone) {
     return `${clean}@s.whatsapp.net`;
 }
 
+// ═══════════════════════════════════════════════════════════════
+// ENHANCED FEATURES - Mensagens Personalizadas e Conversões
+// ═══════════════════════════════════════════════════════════════
+
+// Contextos de sofrimento para personalização
+const CONTEXTOS_SOFRIMENTO = {
+    luto: ['morreu', 'morte', 'faleceu', 'perdeu', 'luto', 'saudade', 'partiu', 'céu'],
+    saude: ['doença', 'doente', 'hospital', 'câncer', 'tratamento', 'cirurgia', 'diagnóstico'],
+    relacionamento: ['separou', 'divórcio', 'traição', 'término', 'brigou', 'casamento', 'namoro'],
+    financeiro: ['dívida', 'desemprego', 'demitido', 'faliu', 'dinheiro', 'conta', 'desespero'],
+    depressao: ['depressão', 'ansiedade', 'triste', 'sozinho', 'vazio', 'sem sentido', 'desanimado'],
+    familia: ['filho', 'pai', 'mãe', 'irmão', 'família', 'conflito', 'briga familiar'],
+    fe: ['dúvida', 'fé', 'distante de deus', 'não acredita', 'raiva de deus', 'abandonado']
+};
+
+/**
+ * Detecta o tipo de contexto do sofrimento
+ * @param {string} contexto - Descrição da situação
+ * @returns {string} Tipo de contexto detectado
+ */
+function detectarTipoContexto(contexto) {
+    if (!contexto) return 'geral';
+    const textoLower = contexto.toLowerCase();
+
+    for (const [tipo, keywords] of Object.entries(CONTEXTOS_SOFRIMENTO)) {
+        if (keywords.some(kw => textoLower.includes(kw))) {
+            return tipo;
+        }
+    }
+    return 'geral';
+}
+
+/**
+ * Gera mensagem personalizada baseada no contexto específico
+ * @param {object} referral - Dados da indicação
+ * @returns {string} Mensagem personalizada
+ */
+export async function gerarMensagemPersonalizada(referral) {
+    const referrerName = referral.referrer_name || 'Alguém que te ama';
+    const referredName = referral.referred_name || 'filho(a)';
+    const contexto = referral.context || '';
+    const tipoContexto = detectarTipoContexto(contexto);
+
+    const promptsByContexto = {
+        luto: `
+        Gere uma primeira mensagem para alguém que está passando por LUTO (perda de alguém querido).
+        Quem indicou: ${referrerName}
+        Nome da pessoa: ${referredName}
+        Detalhes: "${contexto}"
+
+        Instruções:
+        1. Seja extremamente sensível e acolhedor
+        2. Não minimize a dor - valide o sofrimento
+        3. Mencione que ${referrerName} se preocupa
+        4. Ofereça presença, não soluções
+        5. Use versículos sobre consolo (Salmo 23, Mateus 5:4)
+        `,
+
+        saude: `
+        Gere uma primeira mensagem para alguém enfrentando PROBLEMAS DE SAÚDE.
+        Quem indicou: ${referrerName}
+        Nome da pessoa: ${referredName}
+        Detalhes: "${contexto}"
+
+        Instruções:
+        1. Transmita esperança sem ser superficial
+        2. Reconheça o peso da situação
+        3. Ofereça presença constante
+        4. Use versículos sobre cura e força (Isaías 41:10, Êxodo 15:26)
+        `,
+
+        relacionamento: `
+        Gere uma primeira mensagem para alguém com DOR DE RELACIONAMENTO (separação, traição).
+        Quem indicou: ${referrerName}
+        Nome da pessoa: ${referredName}
+        Detalhes: "${contexto}"
+
+        Instruções:
+        1. Não julgue nem tome lados
+        2. Valide a dor do coração partido
+        3. Ofereça escuta sem pressa
+        4. Foque na cura interior, não no relacionamento
+        `,
+
+        financeiro: `
+        Gere uma primeira mensagem para alguém em CRISE FINANCEIRA.
+        Quem indicou: ${referrerName}
+        Nome da pessoa: ${referredName}
+        Detalhes: "${contexto}"
+
+        Instruções:
+        1. Não pregue - acolha primeiro
+        2. Reconheça o estresse e a pressão
+        3. Transmita que Deus é provedor sem clichês
+        4. Ofereça paz antes de soluções
+        `,
+
+        depressao: `
+        Gere uma primeira mensagem para alguém com DEPRESSÃO/ANSIEDADE.
+        Quem indicou: ${referrerName}
+        Nome da pessoa: ${referredName}
+        Detalhes: "${contexto}"
+
+        Instruções:
+        1. EXTREMAMENTE cuidadoso e gentil
+        2. Não diga "tenha fé" ou "não fique triste"
+        3. Valide os sentimentos como reais
+        4. Ofereça presença constante e paciente
+        5. Mencione que está disponível a qualquer hora
+        `,
+
+        familia: `
+        Gere uma primeira mensagem para alguém com CONFLITOS FAMILIARES.
+        Quem indicou: ${referrerName}
+        Nome da pessoa: ${referredName}
+        Detalhes: "${contexto}"
+
+        Instruções:
+        1. Seja neutro - não tome partido
+        2. Reconheça que família dói quando machuca
+        3. Ofereça um espaço seguro para desabafar
+        4. Fale sobre paz e reconciliação com sabedoria
+        `,
+
+        fe: `
+        Gere uma primeira mensagem para alguém com CRISE DE FÉ.
+        Quem indicou: ${referrerName}
+        Nome da pessoa: ${referredName}
+        Detalhes: "${contexto}"
+
+        Instruções:
+        1. Não julgue as dúvidas
+        2. Acolha questionamentos como válidos
+        3. Mostre que duvidar não é pecado
+        4. Ofereça conversa sem pressão por respostas
+        `,
+
+        geral: `
+        Gere uma primeira mensagem para alguém que está passando por dificuldades.
+        Quem indicou: ${referrerName}
+        Nome da pessoa: ${referredName}
+        Contexto: "${contexto}"
+
+        Instruções:
+        1. Seja acolhedor e aberto
+        2. Não presuma saber tudo - convide a conversar
+        3. Transmita paz e disponibilidade
+        `
+    };
+
+    const prompt = promptsByContexto[tipoContexto] + `
+
+    Tom geral: Jesus falando com amor infinito.
+    Formato: Máximo 3 parágrafos curtos.
+    IMPORTANTE: Não exponha detalhes íntimos que assustem a pessoa.
+    `;
+
+    return await generateWithGemini(prompt);
+}
+
+/**
+ * Rastreia conversão e notifica quem indicou
+ * @param {string} referredJid - JID da pessoa indicada que se converteu/engajou
+ * @param {function} sendMessage - Função para enviar mensagem
+ * @returns {object} Resultado do rastreamento
+ */
+export async function rastrearConversao(referredJid, sendMessage = null) {
+    try {
+        // Busca referral pelo número do indicado
+        const referral = await db.getReferralByReferred(referredJid);
+
+        if (!referral) {
+            return { success: false, reason: 'no_referral_found' };
+        }
+
+        // Atualiza status para converted
+        await db.updateGraceReferralStatus(referral.id, 'converted');
+
+        // Se temos função de envio e JID do referrer, notifica
+        if (sendMessage && referral.referrer_jid) {
+            const nomeIndicado = referral.referred_name || 'A pessoa';
+
+            const mensagemNotificacao = await generateWithGemini(`
+                Gere uma mensagem curta para notificar alguém que a pessoa que ele indicou (${nomeIndicado}) está se abrindo e se conectando com Deus.
+
+                Instruções:
+                1. Celebre com alegria genuína
+                2. Agradeça por ter feito a indicação
+                3. Diga que ${nomeIndicado} está no caminho certo
+                4. Mencione que os anjos se alegram (Lucas 15:10)
+                5. Máximo 2 parágrafos
+
+                Tom: Celebração e gratidão
+            `);
+
+            try {
+                await sendMessage(referral.referrer_jid, mensagemNotificacao);
+            } catch (e) {
+                console.error('[GraceReferral] Erro ao notificar referrer:', e);
+            }
+        }
+
+        return {
+            success: true,
+            referral,
+            message: 'Conversão rastreada com sucesso'
+        };
+
+    } catch (err) {
+        console.error('[GraceReferral] Erro ao rastrear conversão:', err);
+        return { success: false, error: err.message };
+    }
+}
+
+/**
+ * Verifica se uma pessoa foi indicada e retorna contexto
+ * @param {string} jid - JID da pessoa
+ * @returns {object|null} Dados da indicação ou null
+ */
+export async function getContextoIndicacao(jid) {
+    try {
+        const referral = await db.getReferralByReferred(jid);
+        if (!referral) return null;
+
+        return {
+            foiIndicado: true,
+            referrerName: referral.referrer_name,
+            contexto: referral.context,
+            tipoContexto: detectarTipoContexto(referral.context),
+            dataIndicacao: referral.created_at
+        };
+    } catch (err) {
+        return null;
+    }
+}
+
+/**
+ * Obtém estatísticas de indicações
+ * @param {string} referrerJid - JID do indicador (opcional)
+ * @returns {object} Estatísticas
+ */
+export async function getEstatisticasIndicacao(referrerJid = null) {
+    try {
+        return await db.getReferralStats(referrerJid);
+    } catch (err) {
+        return {
+            total: 0,
+            pending: 0,
+            contacted: 0,
+            converted: 0
+        };
+    }
+}
+
 export default {
     shouldAskForReferral,
     isPositiveMessage,
@@ -315,6 +569,10 @@ export default {
     getContextAskMessage,
     getConfirmationMessage,
     generateFirstMessage,
+    gerarMensagemPersonalizada,
+    rastrearConversao,
+    getContextoIndicacao,
+    getEstatisticasIndicacao,
     markAskedForReferral,
     handleContactShared,
     handleContextReceived,

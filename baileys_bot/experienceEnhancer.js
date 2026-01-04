@@ -59,19 +59,37 @@ export async function generateChallenge(userProfile, lastTopic) {
         `;
 
         const responseText = await gemini.generateResponse(
-            'system_challenge_generator', 
-            prompt, 
+            'system_challenge_generator',
+            prompt,
             { extraContext: "GERADOR JSON" },
             { skipEmotionalAnalysis: true }
         );
 
-        // Limpeza básica do JSON (caso venha com markdown)
-        const jsonStr = responseText.replace(/```json|```/g, '').trim();
-        return JSON.parse(jsonStr);
+        // Limpeza robusta do JSON
+        let jsonStr = responseText.replace(/```json|```/g, '').trim();
+
+        // Tenta extrair JSON de dentro do texto se houver
+        const jsonMatch = jsonStr.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+            jsonStr = jsonMatch[0];
+        }
+
+        try {
+            return JSON.parse(jsonStr);
+        } catch (parseError) {
+            console.warn('[Challenge] JSON malformado, retornando fallback');
+            return {
+                title: "Momento de Gratidão",
+                description: "Liste 3 coisas pelas quais você é grato hoje",
+                duration: "5 minutos",
+                difficulty: "fácil",
+                personalizedMessage: "A gratidão abre portas que a reclamação fecha."
+            };
+        }
 
     } catch (e) {
-        console.error("Erro no desafio AI:", e);
-        return null; // Melhor não enviar nada do que um desafio quebrado
+        console.error("Erro no desafio AI:", e.message);
+        return null;
     }
 }
 

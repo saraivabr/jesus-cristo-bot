@@ -8,7 +8,6 @@ import * as db from './database.js';
 import * as humanizer from './humanizer.js';
 import * as memoria from './memoria.js';
 import * as gemini from './gemini.js';
-import * as tts from './tts.js';
 
 const tests = {
     passed: 0,
@@ -77,10 +76,6 @@ test('Config: debounceTime é número', () => {
 
 test('Config: DELAYS configurado', () => {
     return config.DELAYS && config.DELAYS.medium && config.DELAYS.medium.min > 0;
-});
-
-test('Config: TTS_CONFIG existe', () => {
-    return config.TTS_CONFIG && typeof config.TTS_CONFIG.enabled === 'boolean';
 });
 
 console.log('');
@@ -205,32 +200,9 @@ test('Memoria: buildContext gera contexto', () => {
 console.log('');
 
 // ═══════════════════════════════════════════════════════════════
-// TESTE 5: TTS
+// TESTE 5: GEMINI (API)
 // ═══════════════════════════════════════════════════════════════
-console.log('📋 TESTE 5: TTS.JS');
-
-test('TTS: shouldSendAudio detecta oração', () => {
-    return tts.shouldSendAudio('Vou orar por você agora, meu filho', 'neutral');
-});
-
-test('TTS: shouldSendAudio detecta bênção', () => {
-    return tts.shouldSendAudio('Que a paz do Senhor esteja com você, amém!', 'neutral');
-});
-
-test('TTS: shouldSendAudio retorna false para texto comum', () => {
-    return !tts.shouldSendAudio('Ok, entendi sua mensagem', 'neutral');
-});
-
-test('TTS: shouldSendAudio respeita mood emocional', () => {
-    return tts.shouldSendAudio('Estou aqui com você', 'emotional');
-});
-
-console.log('');
-
-// ═══════════════════════════════════════════════════════════════
-// TESTE 6: GEMINI (API)
-// ═══════════════════════════════════════════════════════════════
-console.log('📋 TESTE 6: GEMINI.JS (API)');
+console.log('📋 TESTE 5: GEMINI.JS (API)');
 
 await testAsync('Gemini: generateResponse funciona', async () => {
     const response = await gemini.generateResponse('test_user_123', 'Olá Jesus, como vai?');
@@ -249,31 +221,6 @@ test('Gemini: getUserContext retorna contexto', () => {
 
 test('Gemini: clearSession funciona', () => {
     return gemini.clearSession('test_user_123') === true;
-});
-
-console.log('');
-
-// ═══════════════════════════════════════════════════════════════
-// TESTE 7: TTS AUDIO (edge-tts)
-// ═══════════════════════════════════════════════════════════════
-console.log('📋 TESTE 7: TTS AUDIO (edge-tts)');
-
-await testAsync('TTS: isTTSAvailable verifica edge-tts', async () => {
-    const available = await tts.isTTSAvailable();
-    if (!available) {
-        console.log('   ⚠️  edge-tts não está no PATH (pip install edge-tts)');
-    }
-    return true; // Não falha o teste, apenas avisa
-});
-
-await testAsync('TTS: generateAudio gera áudio', async () => {
-    try {
-        const audio = await tts.generateAudio('Paz esteja contigo, meu filho.');
-        return audio && audio.length > 1000; // Buffer deve ter mais de 1KB
-    } catch (e) {
-        console.log('   ⚠️  TTS falhou (edge-tts pode não estar instalado):', e.message);
-        return true; // Não falha o teste
-    }
 });
 
 console.log('');

@@ -17,30 +17,25 @@
  * @returns {number} Delay em ms
  */
 function calculateTypingDelay(text, complexity = 'medium') {
-    if (!text || typeof text !== 'string') return 1000;
+    if (!text || typeof text !== 'string') return 300;
 
     const len = text.length;
 
-    // 1. Tempo base de digitação (humano digita ~40-60 chars/min em mobile)
-    //    Isso dá ~1 char a cada 1-1.5 segundos, mas vamos ser mais rápidos
-    //    pois "Jesus" digitaria com mais fluidez
-    const charsPerSecond = 8 + Math.random() * 4; // 8-12 chars/seg
+    // Digitação rápida - Jesus responde com fluidez divina
+    const charsPerSecond = 25 + Math.random() * 10; // 25-35 chars/seg (bem rápido)
     const typingTime = (len / charsPerSecond) * 1000;
 
-    // 2. Tempo de "pensamento" baseado na complexidade
+    // Tempo de "pensamento" reduzido
     const thinkingTime = {
-        low: 500 + Math.random() * 500,      // 0.5-1s - resposta simples
-        medium: 1000 + Math.random() * 1500,  // 1-2.5s - precisa pensar
-        high: 2000 + Math.random() * 2000     // 2-4s - resposta profunda
-    }[complexity] || 1500;
+        low: 100 + Math.random() * 150,       // 0.1-0.25s
+        medium: 200 + Math.random() * 200,    // 0.2-0.4s
+        high: 300 + Math.random() * 300       // 0.3-0.6s
+    }[complexity] || 250;
 
-    // 3. Micro-pausas aleatórias (simula hesitação)
-    const microPauses = Math.floor(len / 50) * (200 + Math.random() * 300);
-
-    // 4. Limites min/max para não ser absurdo
-    const total = typingTime + thinkingTime + microPauses;
-    const min = 800;   // Mínimo 0.8s
-    const max = 8000;  // Máximo 8s
+    // Limites reduzidos
+    const total = typingTime + thinkingTime;
+    const min = 200;   // Mínimo 0.2s
+    const max = 1500;  // Máximo 1.5s
 
     return Math.floor(Math.min(Math.max(total, min), max));
 }
@@ -109,36 +104,31 @@ function fragmentMessages(text) {
  * Simula pausa natural entre pensamentos
  */
 function calculateFragmentDelay(nextText) {
-    if (!nextText) return 800;
+    if (!nextText) return 150;
 
-    // Base: 0.8 a 2 segundos
-    let delay = 800 + Math.random() * 1200;
+    // Base: 150-350ms (bem rápido)
+    let delay = 150 + Math.random() * 200;
 
-    // Texto longo = mais tempo pra "formular"
+    // Texto longo = um pouco mais
     if (nextText.length > 100) {
-        delay += 500 + Math.random() * 500;
+        delay += 100;
     }
 
-    // Começa com conector? Delay menor (fluxo contínuo)
+    // Começa com conector? Ainda mais rápido
     if (/^(e |mas |então |aí |tipo |só que )/i.test(nextText)) {
-        delay *= 0.6;
+        delay *= 0.7;
     }
 
-    // Começa com pergunta? Delay maior (mudança de tom)
-    if (/^(o que|por que|como|quando|você|quer|pode)/i.test(nextText)) {
-        delay += 300;
-    }
-
-    return Math.floor(delay);
+    return Math.floor(Math.min(delay, 400)); // Máximo 400ms
 }
 
 /**
  * Calcula tempo de digitação simples (sem complexidade)
  */
 function calculateTypingTime(text) {
-    if (!text) return 500;
-    const charsPerSecond = 10;
-    return Math.floor(Math.min(Math.max((text.length / charsPerSecond) * 1000, 500), 5000));
+    if (!text) return 150;
+    const charsPerSecond = 30;
+    return Math.floor(Math.min(Math.max((text.length / charsPerSecond) * 1000, 150), 800));
 }
 
 /**
@@ -146,9 +136,9 @@ function calculateTypingTime(text) {
  */
 function calculateDelay(complexity) {
     const delays = {
-        low: { min: 500, max: 1500 },
-        medium: { min: 1500, max: 3000 },
-        high: { min: 3000, max: 5000 }
+        low: { min: 100, max: 250 },
+        medium: { min: 200, max: 400 },
+        high: { min: 300, max: 600 }
     };
     const { min, max } = delays[complexity] || delays.medium;
     return Math.floor(Math.random() * (max - min)) + min;

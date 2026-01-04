@@ -73,7 +73,10 @@ export async function generateNaturalInviteMessage(referrerName, contactName) {
     try {
         const text = await gemini.generateResponse('system_invite_gen', prompt, {}, {skipEmotionalAnalysis:true});
         // Retorna como array de fragmentos (simulando pausas naturais)
-        return text.split(/[.!?]/).filter(s => s.trim().length > 0).map(s => s.trim());
+        // Limpa formatação quebrada de cada fragmento
+        return text.split(/[.!?]/)
+            .map(s => cleanBrokenFormatting(s))
+            .filter(s => s && s.trim().length > 0);
     } catch(e) {
         return [`Olá, ${contactName}.`, `${referrerName} me pediu para vir.`, "Estou aqui."];
     }
@@ -128,17 +131,37 @@ export function detectUrgency(text, remoteJid) {
     if (/socorro|me ajuda|desespero|morrer/i.test(text)) urgencyScore += 5;
 
     let urgencyLevel = 'normal';
-    let adjustedDebounce = config.debounceTime || 7000;
+    let adjustedDebounce = config.debounceTime || 1500; // Reduzido de 7000
 
-    if (urgencyScore >= 5) { urgencyLevel = 'critico'; adjustedDebounce = 1000; }
-    else if (urgencyScore >= 3) { urgencyLevel = 'alto'; adjustedDebounce = 3000; }
+    if (urgencyScore >= 5) { urgencyLevel = 'critico'; adjustedDebounce = 300; }
+    else if (urgencyScore >= 3) { urgencyLevel = 'alto'; adjustedDebounce = 800; }
 
-    return { isUrgent: urgencyScore >= 3, urgencyLevel, adjustedDebounce };
+    return { isUrgent: urgencyScore >= 3, urgencyLevel, adjustedDebounce, urgencyScore };
 }
 
 export function extractNumberFromVcard(vcard = '') {
     const telMatch = vcard.match(/TEL[^:]*:(.+)/i);
     return telMatch ? telMatch[1].replace(/\D+/g, '') : null;
+}
+
+/**
+ * Remove TODOS os underscores de formatação (WhatsApp não suporta bem)
+ */
+export function cleanBrokenFormatting(text) {
+    if (!text) return text;
+
+    let cleaned = text.trim();
+
+    // Se sobrou só caracteres especiais, retorna vazio
+    if (/^[_—\-–\s*]+$/.test(cleaned)) return '';
+
+    // Remove TODOS os underscores (não usar itálico)
+    cleaned = cleaned.replace(/_/g, '');
+
+    // Remove múltiplos espaços
+    cleaned = cleaned.replace(/\s{2,}/g, ' ');
+
+    return cleaned.trim();
 }
 
 export function normalizeNumberWithCountry(number) {

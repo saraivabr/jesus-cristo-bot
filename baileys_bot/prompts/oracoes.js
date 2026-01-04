@@ -523,7 +523,7 @@ export function gerarMenuCategorias() {
     menu += `${emoji} *${index + 1}.* ${info.titulo}\n`;
   });
 
-  menu += '\n_Digite o número ou nome da categoria para receber uma oração personalizada._';
+  menu += '\n\nDigite o número ou nome da categoria para receber uma oração personalizada.';
 
   return menu;
 }

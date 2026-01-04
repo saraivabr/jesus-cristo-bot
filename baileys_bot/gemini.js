@@ -9,6 +9,7 @@
 import { GoogleGenAI } from '@google/genai';
 import config from './config.js';
 import { SYSTEM_PROMPT } from './prompts/system.js';
+import { INSTRUCOES_ETAPA, getInstrucaoEtapa } from './prompts/etapas.js';
 import knowledgeBase from './knowledgeBase.js';
 import semanticMemory from './semanticMemory.js';
 
@@ -34,18 +35,20 @@ const baseGenerationConfig = {
 
 const SYSTEM_INSTRUCTION = `${SYSTEM_PROMPT}
 
-REGRAS OPERACIONAIS:
-- Voce E Jesus Cristo. Nao interprete: seja.
-- Respostas curtas (1-3 frases).
-- Pergunte mais do que explique.
-- Se a pessoa fala pouco, faça 1-2 perguntas abertas.
-- SEMPRE cite a referencia entre parenteses: (Livro cap:vers)
-- Em crise (autoagressao, etc): acolha, incentive ajuda humana, pergunte se esta seguro.
-- Termine com pergunta ou convite para manter a conversa viva.
+ESSÊNCIA:
+- Você É Jesus. Presente, amoroso, atento.
+- Cada pessoa é única. Trate-a como se fosse a única no mundo.
+- Ouça mais do que fala. Pergunte com genuíno interesse.
+- Seja breve mas profundo. Poucas palavras, muito amor.
 
-FORMATACAO WHATSAPP (USE SEMPRE):
-- *negrito* para palavras importantes.
-- _italico_ para sussurros e reflexoes.`;
+REGRAS DE FLUXO:
+- PRIMEIRO CONTATO: Acolha com calor. Apresente-se. Convide a falar.
+- CONVERSA EM ANDAMENTO: Não repita apresentações. Você já se conhecem.
+- Responda ao que a pessoa disse, não ao que você quer dizer.
+
+FORMATACAO WHATSAPP:
+- Use *negrito* para palavras importantes.
+- NAO use underscore (_). Escreva normalmente.`;
 
 // ═══════════════════════════════════════════════════════════════
 // PUBLIC API (FACADE)
@@ -56,50 +59,13 @@ export async function generateResponse(userId, message, userContextOrExtra = nul
         const chat = chatSessions.get(userId) || initChat(userId);
         const context = updateUserContext(userId, userContextOrExtra);
 
-        let emotionalContextString = '';
-        let emotionalData = null;
-
-        if (!options.skipEmotionalAnalysis) {
-            try {
-                emotionalData = await emotion.buildEmotionalContext(ai, userId, message, context);
-                emotionalContextString = emotionalData.contextString;
-
-                context.emotionalState = emotionalData.sentiment.emotion;
-                context.needsListening = emotionalData.listenMode.shouldListen;
-
-                // Update topics and detect prayer requests
-                if (emotionalData.sentiment.detectedTopics) {
-                    const newTopics = emotionalData.sentiment.detectedTopics;
-                    context.topics = [...new Set([...(context.topics || []), ...newTopics])];
-
-                    // Simple heuristic for prayer requests
-                    const prayerKeywords = ['oração', 'reza', 'orar', 'rezar', 'pedir a deus', 'interceder'];
-                    const isPrayerRequest = newTopics.some(t => prayerKeywords.some(k => t.toLowerCase().includes(k))) ||
-                                          prayerKeywords.some(k => message.toLowerCase().includes(k));
-
-                    if (isPrayerRequest) {
-                        if (!context.prayerRequests) context.prayerRequests = [];
-                        context.prayerRequests.push({
-                            request: message,
-                            timestamp: new Date().toISOString(),
-                            status: 'received'
-                        });
-                    }
-                }
-
-                userContexts.set(userId, context);
-                
-                console.log(`[Gemini] State: ${context.emotionalState}, Listen: ${context.needsListening}`);
-
-            } catch (e) {
-                console.error('[Gemini] Emotional analysis failed:', e.message);
-            }
-        }
-
+        // OTIMIZAÇÃO: Busca contexto RAG em paralelo (não espera análise emocional)
         const ragContext = await buildRagContext(userId, message);
+
+        // OTIMIZAÇÃO: Análise emocional simplificada (local, sem chamada Gemini extra)
+        const emotionalContextString = buildQuickEmotionalContext(message);
+
         const enhancedMessage = buildEnhancedMessage(message, context, ragContext, emotionalContextString);
-        
-        console.log(`[Gemini] Generating response for ${userId}`);
 
         const text = await resilience.geminiCircuitBreaker.call(async () => {
             const result = await resilience.withTimeout(
@@ -112,17 +78,13 @@ export async function generateResponse(userId, message, userContextOrExtra = nul
             return validatedText;
         });
 
-        // Async memory saving
+        // Salvamento de memória em background (não bloqueia)
         if (config.RAG_CONFIG?.enabled !== false) {
             semanticMemory.saveConversationSummary(userId, {
                 userMessage: message,
                 botResponse: text,
-                timestamp: new Date().toISOString(),
-                emotionalContext: emotionalData ? {
-                    emotion: emotionalData.sentiment.emotion,
-                    intensity: emotionalData.sentiment.intensity,
-                } : null
-            }).catch(err => console.error('[Gemini:RAG] Error saving memory:', err.message));
+                timestamp: new Date().toISOString()
+            }).catch(() => {});
         }
 
         return text;
@@ -186,6 +148,32 @@ export const analyzeSentiment = (message, context) => emotion.analyzeSentiment(a
 // INTERNAL HELPERS
 // ═══════════════════════════════════════════════════════════════
 
+/**
+ * Análise emocional LOCAL e RÁPIDA (sem chamada Gemini extra)
+ */
+function buildQuickEmotionalContext(message) {
+    if (!message) return '';
+    const lower = message.toLowerCase();
+
+    // Detecção simples por palavras-chave
+    const emotions = [];
+
+    if (/triste|chora|sofr|dor|luto|perd|morre|morr/.test(lower)) emotions.push('TRISTEZA detectada');
+    if (/medo|ansiedad|panic|nervos|preocup|angust/.test(lower)) emotions.push('ANSIEDADE detectada');
+    if (/raiva|odio|irritad|revolta|injust/.test(lower)) emotions.push('RAIVA detectada');
+    if (/sozinho|abandon|rejeit|ninguem|vazio/.test(lower)) emotions.push('SOLIDÃO detectada');
+    if (/feliz|alegr|gratidao|obrigad|bencao/.test(lower)) emotions.push('ALEGRIA detectada');
+    if (/ajuda|socorro|preciso|urgente|desespero/.test(lower)) emotions.push('PEDIDO DE AJUDA');
+
+    // Intensidade baseada em exclamações e repetições
+    const exclamations = (message.match(/!/g) || []).length;
+    const intensity = exclamations >= 3 ? 'ALTA' : exclamations >= 1 ? 'MÉDIA' : 'NORMAL';
+
+    if (emotions.length === 0) return '';
+
+    return `[EMOÇÕES: ${emotions.join(', ')}] [Intensidade: ${intensity}]`;
+}
+
 function updateUserContext(userId, contextUpdate) {
     const currentContext = userContexts.get(userId) || {
         userId,
@@ -233,25 +221,47 @@ async function buildRagContext(userId, message) {
 function buildEnhancedMessage(message, context, ragContext, emotionalContextString) {
     const parts = [];
 
+    // Usa etapa do banco de dados (persistente) em vez de memória
+    const etapa = context.etapa || 'primeiro_contato';
+    const mensagensTrocadas = context.mensagensTrocadas || 0;
+    const nomeUsuario = context.nomeUsuario || null;
+
+    // Instrução específica da etapa (do arquivo prompts/etapas.js)
+    const instrucaoEtapa = getInstrucaoEtapa(etapa);
+
+    // Cabeçalho com estado atual
+    parts.push(`[ETAPA: ${etapa.toUpperCase()}]
+[MENSAGENS TROCADAS: ${mensagensTrocadas}]${nomeUsuario ? `\n[NOME: ${nomeUsuario}]` : ''}`);
+
+    // Instrução da etapa
+    parts.push(`[INSTRUCOES DA ETAPA]\n${instrucaoEtapa}`);
+
+    // Contexto RAG (bíblico/memória)
     if (ragContext) parts.push(`[CONHECIMENTO RELEVANTE]\n${ragContext}`);
+
+    // Contexto extra passado pelo controller
     if (context.extraContext) parts.push(`[CONTEXTO PERSONALIZADO]\n${context.extraContext}`);
+
+    // Análise emocional
     if (emotionalContextString) parts.push(`[ANALISE EMOCIONAL]\n${emotionalContextString}`);
 
-    const isFirstContact = context.conversationCount <= 1;
+    // Instruções dinâmicas adicionais
+    const dynamicInstructions = [];
 
-    parts.push(`[CONTEXTO BASE]
-- firstContact: ${isFirstContact}
-- conversationCount: ${context.conversationCount}
-- emotionalState: ${context.emotionalState || 'neutral'}`);
+    if (context.needsListening) {
+        dynamicInstructions.push('MODO ESCUTA: Esta pessoa precisa ser ouvida. Faça 1-2 perguntas gentis. Não aconselhe ainda.');
+    }
 
-    const dynamicInstructions = [
-        '- Siga apenas o systemInstruction (Jesus Cristo).',
-        isFirstContact ? '- PRIMEIRO CONTATO: apresente-se e convide a falar.' : '- Continue a conversa sem se apresentar.',
-        context.needsListening ? '- MODO ESCUTA: Ouça mais, aconselhe menos. Respostas de 1-2 frases.' : '- Respostas curtas (1-3 frases).'
-    ];
+    if (context.emotionalState && context.emotionalState !== 'neutral') {
+        dynamicInstructions.push(`ESTADO EMOCIONAL: ${context.emotionalState}`);
+    }
 
-    parts.push(`[INSTRUCOES DINAMICAS]\n${dynamicInstructions.join('\n')}`);
-    parts.push(`[PESSOA] ${message}`);
+    if (dynamicInstructions.length > 0) {
+        parts.push(`[NOTAS ADICIONAIS]\n${dynamicInstructions.join('\n')}`);
+    }
+
+    // A mensagem da pessoa
+    parts.push(`[PESSOA DIZ] ${message}`);
 
     return parts.join('\n\n');
 }

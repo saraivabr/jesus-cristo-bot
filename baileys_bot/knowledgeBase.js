@@ -365,13 +365,15 @@ async function generateEmbeddingsForEntries(entries, batchSize = 5, delayMs = 10
             try {
                 const embedding = await getEmbedding(entry.searchableText, 'RETRIEVAL_DOCUMENT');
                 entry.embedding = embedding;
-                if (embedding.length > 0) {
+                if (embedding && Array.isArray(embedding) && embedding.length > 0) {
                     processed++;
                 } else {
                     failed++;
+                    entry.embedding = []; // Ensure it's always an array
                 }
             } catch (error) {
                 console.error(`[KnowledgeBase] Failed to generate embedding for ${entry.id}:`, error.message);
+                entry.embedding = []; // Ensure it's always an array on error
                 failed++;
             }
         });
@@ -717,6 +719,277 @@ export function isReady() {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// BUSCA BÍBLICA - NOVAS FUNCIONALIDADES
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Busca passagens por tema específico
+ * @param {string} tema - Tema para buscar (ex: amor, perdão, fé)
+ * @param {number} limit - Máximo de resultados
+ * @returns {Promise<SearchResult[]>} - Resultados relevantes
+ */
+export async function buscarPorTema(tema, limit = 5) {
+    if (!tema) return [];
+
+    // Busca semântica
+    const results = await searchRelevantContext(tema, {
+        topK: limit,
+        minScore: 0.4,
+        types: ['passagem']
+    });
+
+    return results;
+}
+
+/**
+ * Parse referência bíblica (ex: "João 3:16" ou "Salmos 23:1-6")
+ * @param {string} ref - Referência
+ * @returns {object|null} - { livro, capitulo, versiculoInicio, versiculoFim }
+ */
+function parseReferenciaBiblica(ref) {
+    if (!ref) return null;
+
+    // Normaliza
+    const normalizado = ref
+        .trim()
+        .replace(/\s+/g, ' ')
+        .replace(/(\d)\s*:\s*(\d)/g, '$1:$2')
+        .replace(/(\d)\s*-\s*(\d)/g, '$1-$2');
+
+    // Padrões: "João 3:16", "1 João 1:9", "Salmos 23", "Salmos 23:1-6"
+    const patterns = [
+        // Com versículos (intervalo)
+        /^(\d?\s*[A-Za-zÀ-ú]+)\s+(\d+):(\d+)-(\d+)$/i,
+        // Com versículo único
+        /^(\d?\s*[A-Za-zÀ-ú]+)\s+(\d+):(\d+)$/i,
+        // Apenas capítulo
+        /^(\d?\s*[A-Za-zÀ-ú]+)\s+(\d+)$/i,
+    ];
+
+    for (const pattern of patterns) {
+        const match = normalizado.match(pattern);
+        if (match) {
+            return {
+                livro: match[1].trim(),
+                capitulo: parseInt(match[2]),
+                versiculoInicio: match[3] ? parseInt(match[3]) : null,
+                versiculoFim: match[4] ? parseInt(match[4]) : (match[3] ? parseInt(match[3]) : null)
+            };
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Busca versículo por referência
+ * @param {string} referencia - Ex: "João 3:16"
+ * @returns {Promise<SearchResult|null>} - Versículo encontrado ou null
+ */
+export async function buscarVersiculo(referencia) {
+    if (!referencia) return null;
+
+    const parsed = parseReferenciaBiblica(referencia);
+
+    // Busca no vector store por referência exata ou similar
+    const refLower = referencia.toLowerCase().trim();
+
+    // Primeiro tenta busca exata no campo referência
+    for (const entry of vectorStore) {
+        if (entry.type === 'passagem' && entry.referencia) {
+            const entryRef = entry.referencia.toLowerCase();
+            if (entryRef.includes(refLower) || refLower.includes(entryRef)) {
+                return {
+                    id: entry.id,
+                    type: entry.type,
+                    titulo: entry.titulo,
+                    texto: entry.texto,
+                    referencia: entry.referencia,
+                    livro: entry.livro,
+                    temas: entry.temas,
+                    score: 1.0
+                };
+            }
+        }
+    }
+
+    // Se não encontrou exato, busca semântica
+    const results = await searchRelevantContext(referencia, {
+        topK: 3,
+        minScore: 0.5,
+        types: ['passagem']
+    });
+
+    return results.length > 0 ? results[0] : null;
+}
+
+/**
+ * Busca versículos que falam sobre um assunto
+ * @param {string} assunto - Ex: "o que a bíblia diz sobre ansiedade"
+ * @param {number} limit - Máximo de resultados
+ * @returns {Promise<SearchResult[]>}
+ */
+export async function buscarSobreAssunto(assunto, limit = 3) {
+    // Remove frases comuns
+    const cleanQuery = assunto
+        .toLowerCase()
+        .replace(/o que a b[ií]blia (diz|fala) sobre/gi, '')
+        .replace(/vers[ií]culos? sobre/gi, '')
+        .replace(/passagens? sobre/gi, '')
+        .trim();
+
+    if (!cleanQuery || cleanQuery.length < 3) {
+        return [];
+    }
+
+    return await searchRelevantContext(cleanQuery, {
+        topK: limit,
+        minScore: 0.45,
+        types: ['passagem']
+    });
+}
+
+/**
+ * Formata versículo para apresentação
+ * @param {SearchResult} versiculo - Resultado da busca
+ * @returns {string} - Versículo formatado
+ */
+export function formatarVersiculo(versiculo) {
+    if (!versiculo) return '';
+
+    let formatted = `📖 *${versiculo.referencia}*\n\n`;
+    formatted += `"${versiculo.texto}"`;
+
+    if (versiculo.titulo && versiculo.titulo !== versiculo.referencia) {
+        formatted += `\n\n_${versiculo.titulo}_`;
+    }
+
+    return formatted;
+}
+
+/**
+ * Verifica se uma mensagem é busca bíblica
+ * @param {string} texto - Texto da mensagem
+ * @returns {object|null} - { tipo: 'referencia'|'tema'|'assunto', query: string }
+ */
+export function detectarBuscaBiblica(texto) {
+    if (!texto) return null;
+
+    const textoLower = texto.toLowerCase().trim();
+
+    // Detecta referência bíblica direta
+    const refPatterns = [
+        /^(\d?\s*[A-Za-zÀ-ú]+)\s+\d+:\d+/i,
+        /^(jo[aã]o|mateus|lucas|marcos|g[eê]nesis|salmos?|prov[eé]rbios|apocalipse|romanos|cor[ií]ntios|efésios|filipenses|hebreus|tiago|pedro)\s+\d+/i
+    ];
+
+    for (const pattern of refPatterns) {
+        if (pattern.test(textoLower)) {
+            return { tipo: 'referencia', query: texto.trim() };
+        }
+    }
+
+    // Detecta busca por assunto
+    if (textoLower.includes('o que a bíblia') ||
+        textoLower.includes('o que a biblia') ||
+        textoLower.includes('versículo sobre') ||
+        textoLower.includes('versiculo sobre') ||
+        textoLower.includes('passagem sobre')) {
+        return { tipo: 'assunto', query: texto.trim() };
+    }
+
+    // Detecta busca por tema
+    const temasComuns = [
+        'amor', 'fé', 'esperança', 'paz', 'perdão', 'ansiedade', 'medo',
+        'força', 'coragem', 'sabedoria', 'paciência', 'humildade', 'graça',
+        'salvação', 'oração', 'cura', 'família', 'casamento', 'trabalho'
+    ];
+
+    if (textoLower.startsWith('buscar ') || textoLower.startsWith('busca ')) {
+        const tema = textoLower.replace(/^buscar?\s+/i, '').trim();
+        return { tipo: 'tema', query: tema };
+    }
+
+    // Verifica se é apenas um tema comum
+    for (const tema of temasComuns) {
+        if (textoLower === tema || textoLower === `sobre ${tema}`) {
+            return { tipo: 'tema', query: tema };
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Processa busca bíblica e retorna resposta formatada
+ * @param {string} texto - Texto da mensagem
+ * @returns {Promise<object|null>} - { tipo, mensagem } ou null
+ */
+export async function processarBuscaBiblica(texto) {
+    const busca = detectarBuscaBiblica(texto);
+
+    if (!busca) return null;
+
+    try {
+        switch (busca.tipo) {
+            case 'referencia': {
+                const versiculo = await buscarVersiculo(busca.query);
+                if (versiculo) {
+                    return {
+                        tipo: 'versiculo',
+                        mensagem: formatarVersiculo(versiculo)
+                    };
+                }
+                return {
+                    tipo: 'nao_encontrado',
+                    mensagem: `Não encontrei "${busca.query}" na minha base. Verifique a referência ou tente uma busca por tema.`
+                };
+            }
+
+            case 'assunto': {
+                const resultados = await buscarSobreAssunto(busca.query);
+                if (resultados.length === 0) {
+                    return {
+                        tipo: 'nao_encontrado',
+                        mensagem: 'Não encontrei passagens sobre esse assunto. Tente usar outras palavras.'
+                    };
+                }
+
+                let mensagem = `📚 *Encontrei ${resultados.length} passagem(ns) sobre esse assunto:*\n\n`;
+                for (const r of resultados) {
+                    mensagem += `${formatarVersiculo(r)}\n\n---\n\n`;
+                }
+                return { tipo: 'assunto', mensagem: mensagem.trim() };
+            }
+
+            case 'tema': {
+                const resultados = await buscarPorTema(busca.query, 3);
+                if (resultados.length === 0) {
+                    return {
+                        tipo: 'nao_encontrado',
+                        mensagem: `Não encontrei passagens sobre "${busca.query}". Tente outro termo.`
+                    };
+                }
+
+                let mensagem = `📖 *Passagens sobre ${busca.query}:*\n\n`;
+                for (const r of resultados) {
+                    mensagem += `${formatarVersiculo(r)}\n\n`;
+                }
+                return { tipo: 'tema', mensagem: mensagem.trim() };
+            }
+        }
+    } catch (error) {
+        console.error('[KnowledgeBase] Erro na busca bíblica:', error);
+        return null;
+    }
+
+    return null;
+}
+
+// Alias para compatibilidade
+export const searchKnowledge = searchRelevantContext;
+
+// ═══════════════════════════════════════════════════════════════
 // DEFAULT EXPORT
 // ═══════════════════════════════════════════════════════════════
 
@@ -733,6 +1006,15 @@ export default {
     searchRelevantContext,
     searchByKeywords,
     formatResultsAsContext,
+    searchKnowledge,
+
+    // Busca Bíblica
+    buscarPorTema,
+    buscarVersiculo,
+    buscarSobreAssunto,
+    formatarVersiculo,
+    detectarBuscaBiblica,
+    processarBuscaBiblica,
 
     // Utility functions
     getStats,

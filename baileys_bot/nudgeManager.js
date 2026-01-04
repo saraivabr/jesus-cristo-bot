@@ -89,9 +89,12 @@ export async function checkAndScheduleNudge(sock, jid) {
     if (!config.NUDGE_CONFIG?.enabled) return;
 
     const lastMsg = db.getUltimaMensagemNaoRespondida(jid);
-    if (!lastMsg) return;
+    if (!lastMsg?.enviado_em) return;
 
-    const timeSinceSent = Date.now() - new Date(lastMsg.enviado_em).getTime();
+    const sentDate = new Date(lastMsg.enviado_em);
+    if (isNaN(sentDate.getTime())) return;
+
+    const timeSinceSent = Date.now() - sentDate.getTime();
 
     if (timeSinceSent < config.NUDGE_CONFIG.minTimeSinceSent) return;
     if (timeSinceSent > config.NUDGE_CONFIG.maxTimeSinceSent) return;

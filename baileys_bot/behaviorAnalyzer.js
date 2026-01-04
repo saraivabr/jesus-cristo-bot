@@ -41,10 +41,15 @@ export async function trackDeepEmotion(jid, currentMessage, detectedSentiment) {
     const behavior = getOrCreateBehavior(jid);
     const psych = behavior.psychodynamics;
 
+    // Null guard for detectedSentiment
+    if (!detectedSentiment) {
+        detectedSentiment = { emotion: 'neutro', trajectory: 'stable' };
+    }
+
     // 1. Detectar Mascaramento
     // Se a msg é curta/seca ("tô bem.") mas o Gemini detectou 'tristeza' ou 'ansiedade'
-    const isShort = currentMessage.length < 15;
-    const isHeavyEmotion = ['triste', 'ansioso', 'desesperado'].includes(detectedSentiment.emotion);
+    const isShort = (currentMessage?.length || 0) < 15;
+    const isHeavyEmotion = ['triste', 'ansioso', 'desesperado'].includes(detectedSentiment?.emotion);
     
     if (isShort && isHeavyEmotion) {
         psych.masking_detected = true;
