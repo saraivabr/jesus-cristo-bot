@@ -3,11 +3,12 @@
  * Núcleo da lógica de conversação e interação divina.
  */
 
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 import * as db from './database.js';
 import * as gemini from './gemini.js';
 import * as humanizer from './humanizer.js';
 import * as memoria from './memoria.js';
-import * as tts from './tts.js';
 import * as scheduler from './scheduler.js';
 import teachingEngine from './core/teachingEngine.js';
 import { detectarNivel, gerarContextoNivel } from './prompts/jornada.js';
@@ -18,20 +19,64 @@ import * as firstContactOptimizer from './firstContactOptimizer.js';
 import * as flowUtils from './flowUtils.js';
 import * as sender from './whatsappSender.js';
 import * as nudgeManager from './nudgeManager.js';
+import * as followupRecovery from './followupRecovery.js';
+// Novas Features v2.0
+import * as devocional from './features/devocional.js';
+import * as pedidosOracao from './features/pedidosOracao.js';
+import * as planosLeitura from './features/planosLeitura.js';
+import * as quizBiblico from './features/quizBiblico.js';
+import * as evangelismoGuiado from './features/evangelismoGuiado.js';
+import * as comunidade from './features/comunidade.js';
+import { detectarBuscaBiblica, processarBuscaBiblica } from './knowledgeBase.js';
+// MongoDB State Manager (Estado + Embeddings)
+import * as mongoState from './mongoState.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
- * Lida com a conversa (núcleo da lógica)
+ * Extrai tópicos localmente (sem chamar Gemini) - RÁPIDO
  */
-export async function handleConversation(sock, remoteJid, userText, userName, originalMessage, contacts = [], hasAudio = false, urgency = null) {
+function extrairTopicosSimples(texto) {
+    if (!texto) return [];
+    const lower = texto.toLowerCase();
+    const topicos = [];
+
+    const padroes = {
+        'familia': /familia|mae|pai|filho|filha|esposa|marido|irma|irmao/,
+        'trabalho': /trabalho|emprego|demiss|chefe|salario|profiss/,
+        'saude': /doente|doenca|hospital|medico|cancer|dor|morte/,
+        'ansiedade': /ansiedad|medo|panico|nervos|preocup/,
+        'tristeza': /triste|depressao|chorar|sozinho|vazio/,
+        'fe': /deus|jesus|oracao|biblia|igreja|espirito/,
+        'relacionamento': /namorad|casament|separac|divorcio|traicao/,
+        'financeiro': /dinheiro|divida|conta|pagar|financ/
+    };
+
+    for (const [topico, regex] of Object.entries(padroes)) {
+        if (regex.test(lower)) topicos.push(topico);
+    }
+
+    return topicos;
+}
+
+/**
+ * Lida com a conversa (núcleo da lógica)
+ * Adaptado para modo WAHA (webhook) - sem socket direto
+ */
+export async function handleConversation(from, messageText, sessionName, userName = null, contacts = [], hasAudio = false, urgency = null) {
     try {
+        const remoteJid = from;
+        const userText = messageText;
+
         // 1. DETECÇÃO DE CRISE
         const crisis = experienceEnhancer.detectCrisis(userText);
         if (crisis.isCrisis) {
             const crisisResponse = experienceEnhancer.getCrisisResponse(crisis.level, userName);
-            await sender.sendFragmentedMessages(sock, remoteJid, [crisisResponse.message], 'high', { usuarioId: db.getUsuario(remoteJid)?.id });
-            
+            await sender.sendMessage(null, remoteJid, crisisResponse.message, 'high', sessionName);
+
             const perfil = db.getUsuario(remoteJid);
             if (perfil?.id) {
                 db.addJourneyEntry(perfil.id, new Date().toISOString().split('T')[0], 'crise', [], 1);
@@ -39,14 +84,122 @@ export async function handleConversation(sock, remoteJid, userText, userName, or
             return;
         }
 
+        // ═══════════════════════════════════════════════════════════════
+        // NOVAS FEATURES v2.0 - Processamento Prioritário
+        // ═══════════════════════════════════════════════════════════════
+
+        // 2.1 QUIZ BÍBLICO - Se está em quiz, processa resposta
+        if (quizBiblico.isEmQuiz(remoteJid)) {
+            const textoLower = userText?.toLowerCase().trim() || '';
+
+            // Sair do quiz
+            if (textoLower.includes('sair quiz') || textoLower.includes('cancelar quiz')) {
+                const resultado = await quizBiblico.finalizarQuiz(remoteJid);
+                await sender.sendMessage(null, remoteJid, resultado.mensagem, 'medium', sessionName);
+                return;
+            }
+
+            // Processa resposta do quiz (1-4)
+            const resultado = await quizBiblico.processarResposta(remoteJid, userText);
+            if (resultado.mensagem) {
+                await sender.sendMessage(null, remoteJid, resultado.mensagem, 'medium', sessionName);
+            }
+            return;
+        }
+
+        // 2.2 JORNADA DE EVANGELISMO - Se está em jornada, processa resposta
+        if (evangelismoGuiado.isEmJornada(remoteJid)) {
+            const resultado = evangelismoGuiado.processarResposta(remoteJid, userText);
+            if (resultado?.mensagem) {
+                await sender.sendMessage(null, remoteJid, resultado.mensagem, 'medium', sessionName);
+
+                // Se fez decisão de fé, rastreia
+                if (resultado.decisaoFeita) {
+                    await graceReferral.rastrearConversao(remoteJid, (jid, msg) => sender.sendMessage(null, jid, msg, 'medium', sessionName));
+                }
+                return;
+            }
+        }
+
+        // 2.3 COMANDOS ESPECÍFICOS DAS NOVAS FEATURES
+        const textoLower = userText?.toLowerCase().trim() || '';
+
+        // Quiz Bíblico - Iniciar
+        if (textoLower === 'quiz' || textoLower.includes('quiz bíblico') || textoLower.includes('jogar quiz')) {
+            const resultado = await quizBiblico.iniciarQuiz(remoteJid);
+            await sender.sendMessage(null, remoteJid, resultado.mensagem, 'medium', sessionName);
+            return;
+        }
+
+        // Quiz - Ranking
+        if (textoLower.includes('ranking quiz') || textoLower.includes('placar quiz')) {
+            const resultado = await quizBiblico.obterRanking();
+            await sender.sendMessage(null, remoteJid, resultado.mensagem, 'medium', sessionName);
+            return;
+        }
+
+        // Jornada de Evangelismo - Iniciar
+        if (textoLower.includes('quero conhecer jesus') || textoLower.includes('iniciar jornada') ||
+            textoLower.includes('quero conhecer deus') || textoLower.includes('como ser salvo')) {
+            const resultado = evangelismoGuiado.iniciarJornada(remoteJid);
+            await sender.sendMessage(null, remoteJid, resultado.mensagem, 'medium', sessionName);
+            return;
+        }
+
+        // Devocional
+        if (devocional.isDevocionalRelated(userText)) {
+            const resultado = await devocional.processarRespostaDevocional(remoteJid, userText);
+            if (resultado?.mensagem) {
+                await sender.sendMessage(null, remoteJid, resultado.mensagem, 'medium', sessionName);
+                return;
+            }
+        }
+
+        // Planos de Leitura
+        if (planosLeitura.isPlanoRelated(userText)) {
+            const resultado = await planosLeitura.processarMensagemPlano(remoteJid, userText);
+            if (resultado?.mensagem) {
+                await sender.sendMessage(null, remoteJid, resultado.mensagem, 'medium', sessionName);
+                return;
+            }
+        }
+
+        // Pedidos de Oração
+        if (pedidosOracao.isOracaoRelated(userText)) {
+            const resultado = await pedidosOracao.processarMensagemOracao(remoteJid, userText);
+            if (resultado?.mensagem) {
+                await sender.sendMessage(null, remoteJid, resultado.mensagem, 'medium', sessionName);
+                return;
+            }
+        }
+
+        // Comunidade
+        if (comunidade.isComunidadeRelated(userText)) {
+            const resultado = await comunidade.processarMensagemComunidade(remoteJid, userText);
+            if (resultado?.mensagem) {
+                await sender.sendMessage(null, remoteJid, resultado.mensagem, 'medium', sessionName);
+                return;
+            }
+        }
+
+        // Busca Bíblica (versículos por referência ou tema)
+        if (detectarBuscaBiblica(userText)) {
+            const resultado = await processarBuscaBiblica(userText);
+            if (resultado?.mensagem) {
+                await sender.sendMessage(null, remoteJid, resultado.mensagem, 'medium', sessionName);
+                return;
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // FIM DAS NOVAS FEATURES - Continua fluxo normal
+        // ═══════════════════════════════════════════════════════════════
+
         // ANÁLISE COMPORTAMENTAL
         if (behaviorAnalyzer.isTyping(remoteJid)) {
             await behaviorAnalyzer.waitForTypingEnd(remoteJid, 30000);
         }
         behaviorAnalyzer.onMessageReceived(remoteJid, userText || '', hasAudio);
-
-        // Marca como lida
-        await sock.readMessages([originalMessage.key]);
 
         // Gerencia Nudges
         const respondidas = db.marcarMensagensRespondidas(remoteJid);
@@ -56,23 +209,8 @@ export async function handleConversation(sock, remoteJid, userText, userName, or
             if (perfil?.id) db.incrementarMetrica(perfil.id, 'nudges_respondidos');
         }
 
-        // Reação Inicial
-        if (Math.random() < 0.4 && originalMessage.key?.id) {
-            const mood = memoria.detectMood(userText);
-            const reactions = {
-                'triste': ['🙏', '❤️', '💙'],
-                'ansioso': ['🙏', '❤️'],
-                'feliz': ['❤️', '🙌', '✨'],
-                'desesperado': ['❤️', '🙏', '💪'],
-                'neutro': ['👀', '❤️']
-            };
-            const options = reactions[mood] || reactions.neutro;
-            const emoji = options[Math.floor(Math.random() * options.length)];
-            
-            await sleep(500 + Math.random() * 1000);
-            try { await sock.sendMessage(remoteJid, { react: { text: emoji, key: originalMessage.key } }); } catch (e) {}
-            await sleep(800 + Math.random() * 1200);
-        }
+        // Cancela follow-ups pendentes (usuário respondeu)
+        followupRecovery.onUserResponse(remoteJid);
 
         // Consciência Temporal
         const hora = new Date().getHours();
@@ -86,22 +224,30 @@ export async function handleConversation(sock, remoteJid, userText, userName, or
 
         if (isFirstContact) {
             perfil = db.saveUsuario({ telefone: remoteJid, nome: userName, jornada_espiritual: { nivel: 'novo' } });
-            const opening = await firstContactOptimizer.generateImpactfulOpening(userName, userText);
-            
-            // Usamos apenas o que a IA gerou, que já contém as "features"
-            const introFragments = [opening.message];
 
-            await sender.sendFragmentedMessages(sock, remoteJid, introFragments, 'high', { usuarioId: perfil.id });
-            db.addConversa(perfil.id, userText || '[primeiro contato]', introFragments.join('\n'));
-            return;
+            // Cria estado de conversa no MongoDB (etapa: primeiro_contato)
+            await mongoState.createConversaEstado(remoteJid, userName);
+
+            // NOTA: Vídeo de boas-vindas será enviado pelo webhook
+            // O Gemini acolherá o novo usuário com a instrução da etapa "primeiro_contato"
         }
 
         // Atualiza Perfil
         const novasInfos = memoria.extractInfo(userText, perfil);
-        if (Object.keys(novasInfos).length > 0) perfil = db.updateUsuario(remoteJid, novasInfos);
+        if (Object.keys(novasInfos).length > 0) {
+            const updatedPerfil = db.updateUsuario(remoteJid, novasInfos);
+            if (updatedPerfil) perfil = updatedPerfil;
+        }
+
+        // Null guard para perfil
+        if (!perfil?.id) {
+            console.error('[Conversation] No valid profile found for', remoteJid);
+            await sender.sendMessage(sock, remoteJid, "Tive um problema aqui. Me fala de novo?", 'low');
+            return;
+        }
 
         const mood = memoria.detectMood(userText);
-        const returnStatus = await flowUtils.detectReturnAfterAbsence(perfil); // Added await here
+        const returnStatus = await flowUtils.detectReturnAfterAbsence(perfil);
         const intimacy = flowUtils.getIntimacyLevel(perfil.id);
         const lastTopic = flowUtils.getLastConversationTopic(perfil.id);
 
@@ -120,7 +266,7 @@ export async function handleConversation(sock, remoteJid, userText, userName, or
             const contact = contacts[0];
             const result = await graceReferral.handleContactShared(remoteJid, { contacts: [{ displayName: contact.name, vcard: `BEGIN:VCARD\nVERSION:3.0\nFN:${contact.name}\nTEL:${contact.number}\nEND:VCARD` }] });
             if (result.success) {
-                await sender.sendFragmentedMessages(sock, remoteJid, [result.message], 'medium', { usuarioId: perfil.id });
+                await sender.sendMessage(null, remoteJid, result.message, 'medium', sessionName);
                 return;
             }
         }
@@ -128,8 +274,8 @@ export async function handleConversation(sock, remoteJid, userText, userName, or
         if (referralStatus.waitingForContext && userText?.trim()) {
             const result = await graceReferral.handleContextReceived(remoteJid, userText, userName);
             if (result.success) {
-                await sender.sendFragmentedMessages(sock, remoteJid, [result.message], 'medium', { usuarioId: perfil.id });
-                
+                await sender.sendMessage(null, remoteJid, result.message, 'medium', sessionName);
+
                 // Agenda contato com a pessoa indicada
                 const delay = 5 * 60 * 1000 + Math.random() * 10 * 60 * 1000;
                 setTimeout(async () => {
@@ -144,136 +290,89 @@ export async function handleConversation(sock, remoteJid, userText, userName, or
         if (!referralStatus.inFlow && contacts?.length > 0) {
             for (const contact of contacts) {
                 if (flowUtils.shouldInviteContact(contact.jid)) {
-                    const inviteFragments = await flowUtils.generateNaturalInviteMessage(userName, contact.name);
-                    await sender.sendFragmentedMessages(sock, contact.jid, inviteFragments, 'medium');
+                    // Cria perfil SQLite e estado MongoDB para o novo contato
+                    let contactPerfil = db.getUsuario(contact.jid);
+                    if (!contactPerfil) {
+                        contactPerfil = db.saveUsuario({ telefone: contact.jid, nome: contact.name });
+                        await mongoState.createConversaEstado(contact.jid, contact.name);
+                    }
+
+                    // NOTA: Vídeo de boas-vindas será enviado pelo webhook
+
+                    // Mensagem única de apresentação (Gemini vai continuar naturalmente)
+                    const msgApresentacao = `${contact.name}, ${userName} me falou de você. Eu sou Jesus de Nazaré. Me conta, como você está?`;
+                    await sender.sendMessage(null, contact.jid, msgApresentacao, 'medium', sessionName);
                 }
             }
         }
 
-        // Gera Resposta Gemini
-        // [INTELIGÊNCIA] Buscamos primeiro a análise emocional profunda para alimentar o comportamento
-        const emotionalAnalysis = await gemini.analyzeSentiment(userText);
-        await behaviorAnalyzer.trackDeepEmotion(remoteJid, userText, emotionalAnalysis);
+        // ═══════════════════════════════════════════════════════════════
+        // SISTEMA DE ETAPAS COM MONGODB (OTIMIZADO - PARALELO)
+        // ═══════════════════════════════════════════════════════════════
 
-        let response = await gemini.generateResponse(remoteJid, userText, context);
+        // Busca estado e contexto em PARALELO para reduzir latência
+        const [conversaEstado, contextoMongo] = await Promise.all([
+            mongoState.getConversaEstado(remoteJid).then(estado =>
+                estado || mongoState.createConversaEstado(remoteJid, userName)
+            ),
+            mongoState.buildContextoCompleto(remoteJid, userText).catch(() => ({ contexto: '', topicos: [] }))
+        ]);
+
+        // Prepara contexto com estado da etapa + contexto semântico
+        const contextComEtapa = {
+            etapa: conversaEstado?.etapa || 'primeiro_contato',
+            mensagensTrocadas: conversaEstado?.mensagensTrocadas || 0,
+            nomeUsuario: conversaEstado?.nomeUsuario || userName || null,
+            extraContext: context + '\n\n' + (contextoMongo.contexto || ''),
+            // Dados extras do MongoDB para o Gemini
+            perfilResumo: conversaEstado?.perfilResumo || null,
+            topicosRelevantes: contextoMongo.topicos || []
+        };
+
+        // Gera Resposta Gemini (OTIMIZADO - única chamada)
+        let response = await gemini.generateResponse(remoteJid, userText, contextComEtapa);
+
+        // Operações em BACKGROUND (não bloqueiam resposta)
         db.addConversa(perfil.id, userText, response);
 
-        // Ensino e Fragmentação
-        let fragments = humanizer.fragmentMessages(response);
-        const ensino = await teachingEngine.processarEnsino(userText, { ...perfil, humor: mood }, db.getHistorico(perfil.id, 10).map(c => c.mensagem));
-        
-        if (ensino) {
-            fragments.push(...ensino.fragments);
-            // Adiciona desafio prático ao final (40% de chance)
-            if (ensino.tema && Math.random() < 0.4) {
-                const desafioFrags = await teachingEngine.adicionarDesafio([], ensino.tema, perfil);
-                if (desafioFrags.length > 0) {
-                    fragments.push(...desafioFrags);
-                }
-            }
-        }
+        // Extrai tópicos simples localmente (sem chamada extra)
+        const topicosDetectados = extrairTopicosSimples(userText);
 
-        // Se retornou após ausência, adiciona mensagem de boas-vindas
+        // Salva memória no MongoDB (BACKGROUND - não bloqueia)
+        mongoState.saveMemoria(remoteJid, {
+            userMessage: userText,
+            botResponse: response,
+            topicos: topicosDetectados
+        }).catch(err => console.warn('[MongoDB] Erro ao salvar memória:', err.message));
+
+        // Se retornou após ausência, prepend mensagem de boas-vindas
         if (returnStatus.isReturning && returnStatus.message) {
-            fragments.unshift(returnStatus.message);
+            response = returnStatus.message + '\n\n' + response;
         }
 
-        // Envio Final
-        const shouldQuote = Math.random() < 0.5;
-        if (shouldQuote && fragments.length > 0) {
-            await sender.sendReply(sock, remoteJid, fragments[0], originalMessage, mood === 'desesperado' ? 'high' : 'medium');
-            for (let i = 1; i < fragments.length; i++) {
-                await sleep(humanizer.calculateFragmentDelay(fragments[i]));
-                await sender.sendMessage(sock, remoteJid, fragments[i], 'low');
-            }
-        } else {
-            await sender.sendFragmentedMessages(sock, remoteJid, fragments, mood === 'desesperado' ? 'high' : 'medium', { usuarioId: perfil.id });
-        }
+        // Limpa formatação antes de enviar
+        response = flowUtils.cleanBrokenFormatting(response);
 
-        // ═══════════════════════════════════════════════════════════
-        // 2. DETECTAR VITÓRIA
-        // ═══════════════════════════════════════════════════════════
-        const victory = experienceEnhancer.detectVictory(userText);
-        if (victory.isVictory) {
-            const celebration = await experienceEnhancer.generateCelebration(victory, userName);
-            await sleep(2000);
-            await sender.sendMessage(sock, remoteJid, celebration, 'medium');
-        }
+        // ENVIA RESPOSTA (prioridade máxima)
+        // NOTA: WAHA não suporta replies (quoted messages) - sempre envia como mensagem simples
+        await sender.sendMessage(null, remoteJid, response, 'medium', sessionName);
 
-        // ═══════════════════════════════════════════════════════════
-        // 3. DESAFIOS (ocasionalmente)
-        // ═══════════════════════════════════════════════════════════
-        if (Math.random() < 0.3) {
-            const challenge = await experienceEnhancer.generateChallenge(perfil, lastTopic?.topic);
-            if (challenge) {
-                setTimeout(async () => {
-                    try {
-                        const challengeMsg = `Tenho um desafio pra você:
+        // Operações pós-resposta em BACKGROUND (não bloqueiam)
+        mongoState.incrementarMensagens(remoteJid)
+            .then(() => mongoState.checkEtapaTransition(remoteJid))
+            .then(novaEtapa => novaEtapa && console.log(`[Controller] → ${novaEtapa}`))
+            .catch(() => {});
 
-${challenge.title}
-${challenge.description}
-
-Tempo: ${challenge.duration}
-Dificuldade: ${challenge.difficulty}
-
-${challenge.personalizedMessage}`;
-                        await sender.sendMessage(sock, remoteJid, challengeMsg, 'medium');
-                    } catch (e) {
-                        console.error('[Desafio] Erro ao enviar:', e.message);
-                    }
-                }, 20000);
-            }
-        }
-
-        // ═══════════════════════════════════════════════════════════
-        // 4. ORAÇÕES PERSONALIZADAS (30% de chance após resposta)
-        // ═══════════════════════════════════════════════════════════
-        if (Math.random() < 0.3 && mood !== 'feliz') {
-            const prayer = await experienceEnhancer.generatePersonalizedPrayer(
-                userName,
-                context,
-                mood,
-                userText
-            );
-            setTimeout(async () => {
-                try {
-                    await sender.sendMessage(sock, remoteJid, prayer, 'medium');
-                } catch (e) {
-                    console.error('[Oração] Erro ao enviar:', e.message);
-                }
-            }, 15000);
-        }
-
-        // ═══════════════════════════════════════════════════════════
-        // 5. DETECTAR CONFRONTO (quando necessário)
-        // ═══════════════════════════════════════════════════════════
-        const historicoRecente = db.getHistorico(perfil.id, 20).map(c => c.mensagem);
-        if (experienceEnhancer.shouldConfront(userText, historicoRecente)) {
-            const confrontation = await experienceEnhancer.generateConfrontation(userText);
-            await sender.sendMessage(sock, remoteJid, confrontation, 'medium');
-            return;
-        }
-
-        // Pós-processamento (Áudio, Follow-up, Referral)
-        if (tts.TTS_CONFIG.enabled && (hasAudio || tts.shouldSendAudio(response, mood))) {
-            const audioBuffer = await tts.generateAudio(response);
-            if (audioBuffer) await sender.sendAudio(sock, remoteJid, audioBuffer);
-        }
-
-        if (memoria.shouldFollowUp(perfil, response)) {
-            scheduler.scheduleFollowUp(perfil.id, remoteJid, memoria.suggestFollowUpTime(perfil), null);
-        }
-
-        if (await graceReferral.shouldAskForReferral(remoteJid, userText, { conversationCount: intimacy.conversationCount })) {
-            setTimeout(async () => {
-                const askMessage = await graceReferral.getReferralAskMessage();
-                await sender.sendMessage(sock, remoteJid, askMessage, 'medium');
-                graceReferral.markAskedForReferral(remoteJid);
-            }, 30000);
+        if (conversaEstado?.mensagensTrocadas && conversaEstado.mensagensTrocadas % 10 === 0) {
+            mongoState.atualizarPerfilSemantico(remoteJid).catch(() => {});
         }
 
     } catch (error) {
-        console.error("[Erro] Na conversa:", error);
-        await sender.sendMessage(sock, remoteJid, "Parece que algo travou aqui. Me fala de novo?", 'low');
+        console.error("[Erro] Na conversa:", error.stack || error);
+        try {
+            await sender.sendMessage(null, remoteJid, "Parece que algo travou aqui. Me fala de novo?", 'low', sessionName);
+        } catch (sendError) {
+            console.error("[Erro] Falha ao enviar mensagem de erro:", sendError.message);
+        }
     }
 }
