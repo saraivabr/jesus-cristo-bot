@@ -1,53 +1,47 @@
 /**
  * JESUS CRISTO BOT - O BOM PASTOR DIGITAL
- * Orquestrador Principal (WhatsApp + Gemini)
+ * Orquestrador Principal (WAHA HTTP + Gemini)
  *
- * ATUALIZADO: Suporte a Codigo de Pareamento + Dashboard
+ * Arquitetura: Express HTTP Webhooks (não Baileys WebSocket)
+ * - Recebe mensagens via POST /webhook/messages
+ * - Processa com conversationController
+ * - Envia via WAHA Client HTTP adapter
+ * - Mantém scheduler para follow-ups automáticos
  */
 
-import makeWASocket, { DisconnectReason, useMultiFileAuthState, makeCacheableSignalKeyStore, getContentType } from '@whiskeysockets/baileys';
-import pino from 'pino';
-import qrcode from 'qrcode-terminal';
-import NodeCache from 'node-cache';
+import express from 'express';
 import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
-import fs from 'fs';
-import http from 'http';
-import readline from 'readline';
+import { dirname } from 'path';
 
-// Modulos internos
+// Módulos internos
 import config from './config.js';
 import * as db from './database.js';
 import * as scheduler from './scheduler.js';
-import * as behaviorAnalyzer from './behaviorAnalyzer.js';
 import * as flowUtils from './flowUtils.js';
 import * as sender from './whatsappSender.js';
-import * as nudgeManager from './nudgeManager.js';
-import * as audioProcessor from './audioProcessor.js';
+import * as wahaClient from './wahaClient.js';
 import { handleConversation } from './conversationController.js';
+import * as mongoState from './mongoState.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const logger = pino({ level: 'warn' });
-const messageBuffer = new Map();
-const msgRetryCounterCache = new NodeCache();
 
-// Estado global
-let sock = null;
-let lastQR = null;
-let pairingCode = null;
-let connectionStatus = 'Desconectado';
-let connectedPhone = null;
-let reconnectAttempts = 0;
+// Express App
+const app = express();
+const PORT = process.env.PORT || 8080;
+const WAHA_SESSION = process.env.WAHA_SESSION || 'default';
+const WAHA_URL = process.env.WAHA_URL || 'http://localhost:3000';
+
+// Middleware
+app.use(express.json());
+
+// Estado global para dashboard
+let messageBuffer = new Map();
+let connectionStatus = 'Aguardando WAHA';
+let connectedPhone = process.env.PHONE_NUMBER || 'N/A';
 let messageCount = 0;
 let startTime = Date.now();
-
-const MAX_RECONNECT_ATTEMPTS = 5;
-const PORT = process.env.PORT || 8080;
-
-// Configuracao: usar codigo de pareamento ou QR
-const USE_PAIRING_CODE = process.env.USE_PAIRING_CODE === 'true' || process.argv.includes('--pair');
-const PHONE_NUMBER = process.env.PHONE_NUMBER || '5511980948484';
+let wahaHealthy = false;
 
 // ═══════════════════════════════════════════════════════════════
 // DASHBOARD HTTP
@@ -59,8 +53,8 @@ const htmlTemplate = (content) => `
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="refresh" content="10">
-    <title>Jesus Cristo Bot - Dashboard</title>
+    <meta http-equiv="refresh" content="15">
+    <title>Jesus Cristo Bot - Dashboard (WAHA)</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -73,7 +67,7 @@ const htmlTemplate = (content) => `
         .container { max-width: 800px; margin: 0 auto; }
         .header { text-align: center; margin-bottom: 30px; }
         .header h1 { font-size: 2.5em; margin-bottom: 10px; }
-        .header .subtitle { color: #888; }
+        .header .subtitle { color: #888; font-size: 0.9em; }
         .status-card {
             background: rgba(255,255,255,0.1);
             border-radius: 15px;
@@ -93,19 +87,6 @@ const htmlTemplate = (content) => `
         .status-disconnected { background: #ff4444; box-shadow: 0 0 10px #ff4444; }
         .status-waiting { background: #ffaa00; box-shadow: 0 0 10px #ffaa00; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-        .pairing-code {
-            font-size: 3em;
-            font-weight: bold;
-            letter-spacing: 8px;
-            text-align: center;
-            background: linear-gradient(90deg, #00ff88, #00aaff);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            padding: 20px;
-            margin: 20px 0;
-        }
-        .qr-container { text-align: center; padding: 20px; }
-        .qr-container img { max-width: 300px; border-radius: 10px; }
         .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; }
         .stat-box {
             background: rgba(0,255,136,0.1);
@@ -115,32 +96,26 @@ const htmlTemplate = (content) => `
         }
         .stat-value { font-size: 2em; font-weight: bold; color: #00ff88; }
         .stat-label { color: #888; font-size: 0.9em; }
-        .instructions {
-            background: rgba(255,170,0,0.1);
-            border-left: 4px solid #ffaa00;
+        .info-box {
+            background: rgba(0,170,255,0.1);
+            border-left: 4px solid #00aaff;
             padding: 15px;
             margin: 20px 0;
             border-radius: 0 10px 10px 0;
         }
-        .btn {
-            display: inline-block;
-            padding: 12px 25px;
-            background: linear-gradient(90deg, #ff4444, #ff6666);
-            color: white;
-            text-decoration: none;
-            border-radius: 8px;
-            margin: 10px 5px;
-            transition: transform 0.2s;
-        }
-        .btn:hover { transform: scale(1.05); }
-        .btn-green { background: linear-gradient(90deg, #00aa44, #00ff88); }
+        .soul-view { margin-top: 30px; background: rgba(255,255,255,0.05); border-radius: 15px; padding: 20px; }
+        .soul-card { border-bottom: 1px solid rgba(255,255,255,0.1); padding: 15px 0; }
+        .soul-card:last-child { border-bottom: none; }
+        .soul-name { font-weight: bold; color: #00aaff; font-size: 1.1em; }
+        .soul-pain { color: #ff6666; font-size: 0.9em; font-style: italic; }
+        .soul-hope { color: #00ff88; font-size: 0.9em; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
             <h1>🕊️ Jesus Cristo Bot</h1>
-            <p class="subtitle">O Bom Pastor Digital</p>
+            <p class="subtitle">O Bom Pastor Digital (WAHA Mode)</p>
         </div>
         ${content}
     </div>
@@ -148,50 +123,64 @@ const htmlTemplate = (content) => `
 </html>
 `;
 
-const httpServer = http.createServer((req, res) => {
+// ═══════════════════════════════════════════════════════════════
+// ENDPOINTS EXPRESS
+// ═══════════════════════════════════════════════════════════════
+
+// Health check
+app.get('/health', (req, res) => {
+    res.json({
+        status: 'ok',
+        waha: wahaHealthy,
+        mode: 'webhook',
+        uptime: Math.floor((Date.now() - startTime) / 1000)
+    });
+});
+
+// Dashboard principal
+app.get('/', (req, res) => {
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
 
-    const url = new URL(req.url, `http://${req.headers.host}`);
-
-    if (url.pathname === '/reset') {
-        console.log('[Dashboard] Reset solicitado');
-        res.writeHead(200);
-        res.end(htmlTemplate(`
-            <div class="status-card">
-                <h2>♻️ Reiniciando...</h2>
-                <p>A sessao sera limpa e um novo codigo sera gerado.</p>
-                <script>setTimeout(() => location.href = '/', 5000);</script>
-            </div>
-        `));
-
-        setTimeout(async () => {
-            if (sock) try { await sock.logout(); } catch(e) {}
-            if (fs.existsSync(join(__dirname, 'auth_session'))) {
-                fs.rmSync(join(__dirname, 'auth_session'), { recursive: true, force: true });
-            }
-            pairingCode = null;
-            lastQR = null;
-            connectionStatus = 'Desconectado';
-            connectToWhatsApp();
-        }, 1000);
-        return;
-    }
-
-    if (url.pathname === '/health') {
-        res.writeHead(200, { 'Content-Type': 'text/plain' });
-        res.end('OK');
-        return;
-    }
-
-    // Dashboard principal
     let content = '';
 
     if (connectionStatus === 'Conectado') {
         const uptime = Math.floor((Date.now() - startTime) / 1000 / 60);
+
+        let soulsHtml = '';
+        try {
+            const souls = db.db.prepare(`
+                SELECT u.nome, u.telefone, p.core_pain, p.core_hope, p.spiritual_stage
+                FROM usuarios u
+                LEFT JOIN user_deep_profile p ON u.telefone = p.jid
+                ORDER BY u.ultimo_contato DESC
+                LIMIT 5
+            `).all();
+
+            soulsHtml = `
+                <div class="soul-view">
+                    <h3>👥 Visao de Almas (Recentes)</h3>
+                    ${souls.map(s => `
+                        <div class="soul-card">
+                            <div class="soul-name">${s.nome || 'Buscador'} (${s.telefone})</div>
+                            <div class="soul-pain">💔 Dor: ${s.core_pain || 'Analizando...'}</div>
+                            <div class="soul-hope">✨ Busca: ${s.core_hope || 'Analizando...'}</div>
+                            <div style="font-size:0.8em; color:#888;">Estagio: ${s.spiritual_stage || 'Inicial'}</div>
+                        </div>
+                    `).join('')}
+                    <div style="text-align:center; padding-top:10px;">
+                        <small style="color:#666">IA atualiza perfis automaticamente a cada 5 interacoes.</small>
+                    </div>
+                </div>
+            `;
+        } catch (e) {
+            console.error('Erro ao buscar almas:', e.message);
+        }
+
         content = `
             <div class="status-card">
-                <h2><span class="status-indicator status-connected"></span>Conectado</h2>
-                <p style="margin-top:10px">Telefone: ${connectedPhone || 'N/A'}</p>
+                <h2><span class="status-indicator status-connected"></span>Conectado (WAHA)</h2>
+                <p style="margin-top:10px">Telefone: ${connectedPhone}</p>
+                <p style="margin-top:5px; font-size:0.9em; color:#888;">Sessao: ${WAHA_SESSION}</p>
             </div>
             <div class="stats">
                 <div class="stat-box">
@@ -203,279 +192,207 @@ const httpServer = http.createServer((req, res) => {
                     <div class="stat-label">Uptime</div>
                 </div>
             </div>
-            <div style="text-align:center; margin-top:20px;">
-                <a href="/reset" class="btn" onclick="return confirm('Desconectar o WhatsApp?')">Desconectar</a>
+            <div class="info-box">
+                <strong>Configuracao WAHA:</strong><br>
+                Endpoint: ${WAHA_URL}<br>
+                Sessao: ${WAHA_SESSION}<br>
+                Webhook: /webhook/messages
             </div>
-        `;
-    } else if (pairingCode) {
-        content = `
-            <div class="status-card">
-                <h2><span class="status-indicator status-waiting"></span>Aguardando Pareamento</h2>
-                <div class="pairing-code">${pairingCode}</div>
-                <div class="instructions">
-                    <strong>Como conectar:</strong>
-                    <ol style="margin-left:20px; margin-top:10px;">
-                        <li>Abra o WhatsApp no celular</li>
-                        <li>Va em <b>Configuracoes > Dispositivos conectados</b></li>
-                        <li>Toque em <b>Conectar dispositivo</b></li>
-                        <li>Toque em <b>Conectar com numero de telefone</b></li>
-                        <li>Digite o codigo acima</li>
-                    </ol>
-                </div>
-            </div>
-            <div style="text-align:center;">
-                <a href="/reset" class="btn">Gerar Novo Codigo</a>
-            </div>
-        `;
-    } else if (lastQR) {
-        const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(lastQR)}`;
-        content = `
-            <div class="status-card">
-                <h2><span class="status-indicator status-waiting"></span>Escaneie o QR Code</h2>
-                <div class="qr-container">
-                    <img src="${qrUrl}" alt="QR Code">
-                </div>
-            </div>
-            <div style="text-align:center;">
-                <a href="/?pair=true" class="btn btn-green">Usar Codigo de Pareamento</a>
-                <a href="/reset" class="btn">Resetar</a>
-            </div>
+            ${soulsHtml}
         `;
     } else {
         content = `
             <div class="status-card">
-                <h2><span class="status-indicator status-disconnected"></span>Desconectado</h2>
-                <p>Aguardando inicializacao...</p>
+                <h2><span class="status-indicator status-waiting"></span>Aguardando WAHA</h2>
+                <p style="margin-top:10px">Status: ${connectionStatus}</p>
+            </div>
+            <div class="info-box">
+                <strong>Proximas etapas:</strong><br>
+                1. Verifique se WAHA esta rodando em ${WAHA_URL}<br>
+                2. Configure webhook para: http://your-domain/webhook/messages<br>
+                3. Envie uma mensagem para testar
             </div>
         `;
     }
 
-    res.writeHead(200);
     res.end(htmlTemplate(content));
 });
 
-httpServer.listen(PORT, '0.0.0.0', () => {
-    console.log(`\n🌐 Dashboard: http://localhost:${PORT}`);
+// Webhook para receber mensagens do WAHA
+app.post('/webhook/messages', async (req, res) => {
+    const event = req.body;
+
+    console.log('[WAHA Webhook]', event.event, event.data?.from);
+
+    if (!event.event || !event.data) {
+        return res.status(400).json({ error: 'Invalid webhook payload' });
+    }
+
+    // Marca WAHA como saudavel
+    wahaHealthy = true;
+
+    // Atualiza status de conexao
+    if (connectionStatus !== 'Conectado') {
+        connectionStatus = 'Conectado';
+        startTime = Date.now();
+        console.log('✅ WAHA conectado e recebendo webhooks');
+    }
+
+    try {
+        if (event.event === 'message') {
+            const { data } = event;
+            const { from, body } = data;
+
+            if (!from || !body) {
+                return res.json({ status: 'ignored' });
+            }
+
+            messageCount++;
+            await processIncomingMessage(from, body, data);
+            return res.json({ status: 'processed' });
+        }
+        else if (event.event === 'message_ack') {
+            // Confirmacao de entrega - ignorar
+            return res.json({ status: 'ack_received' });
+        }
+        else {
+            return res.json({ status: 'ignored', reason: 'unknown_event' });
+        }
+    } catch (error) {
+        console.error('[Webhook Error]', error.message);
+        return res.status(500).json({ error: error.message });
+    }
+});
+
+// Heartbeat do WAHA
+app.post('/webhook/health', (req, res) => {
+    wahaHealthy = true;
+    res.json({ status: 'ok' });
 });
 
 // ═══════════════════════════════════════════════════════════════
-// CONEXAO WHATSAPP
+// PROCESSAMENTO DE MENSAGENS
 // ═══════════════════════════════════════════════════════════════
 
-async function connectToWhatsApp() {
-    const { state, saveCreds } = await useMultiFileAuthState('auth_session');
+/**
+ * Processa mensagem recebida do webhook WAHA
+ * - Valida e normaliza JID (WhatsApp format)
+ * - Aplica debounce inteligente (urgência define timing)
+ * - Chama handleConversation com parâmetros esperados
+ */
+async function processIncomingMessage(jid, body, wahaData = {}) {
+    // Validação básica
+    if (!jid || !body) return;
 
-    const socketConfig = {
-        auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, logger) },
-        logger,
-        msgRetryCounterCache,
-        generateHighQualityLinkPreview: true,
-        getMessage: async () => ({ conversation: '' }),
-    };
-
-    // Se usar codigo de pareamento, desabilita QR
-    if (USE_PAIRING_CODE) {
-        socketConfig.printQRInTerminal = false;
+    // Normaliza JID para formato WhatsApp (@s.whatsapp.net para individual, @g.us para grupo)
+    let remoteJid = jid;
+    if (!remoteJid.includes('@')) {
+        remoteJid = jid.includes('-') ? `${jid}@g.us` : `${jid}@s.whatsapp.net`;
     }
 
-    sock = makeWASocket(socketConfig);
+    const userText = body.trim();
+    if (!userText) return;
 
-    // Solicita codigo de pareamento se necessario
-    if (USE_PAIRING_CODE && !sock.authState.creds.registered) {
-        console.log('\n📱 Solicitando codigo de pareamento...');
-        try {
-            await new Promise(r => setTimeout(r, 2000));
-            pairingCode = await sock.requestPairingCode(PHONE_NUMBER);
-            console.log('\n════════════════════════════════════════');
-            console.log('   🔑 CODIGO DE PAREAMENTO:', pairingCode);
-            console.log('════════════════════════════════════════');
-            console.log('\n📲 No WhatsApp: Configuracoes > Dispositivos > Conectar com numero\n');
-        } catch (err) {
-            console.error('❌ Erro ao solicitar codigo:', err.message);
-        }
-    }
+    // Detecção de urgência (ajusta debounce dinamicamente)
+    const urgency = flowUtils.detectUrgency(userText, remoteJid);
 
-    sock.ev.process(async (events) => {
-        if (events['connection.update']) {
-            const { connection, lastDisconnect, qr } = events['connection.update'];
-
-            if (qr && !USE_PAIRING_CODE) {
-                lastQR = qr;
-                console.log('\n📱 QR Code gerado! Acesse o dashboard.\n');
-                qrcode.generate(qr, { small: true });
-            }
-
-            if (connection === 'close') {
-                connectionStatus = 'Desconectado';
-                pairingCode = null;
-                const statusCode = (lastDisconnect?.error)?.output?.statusCode;
-                const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-
-                console.log('❌ Conexao fechada:', lastDisconnect?.error?.message || 'Unknown');
-
-                if (shouldReconnect && reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
-                    reconnectAttempts++;
-                    const delay = Math.min(5000 * Math.pow(2, reconnectAttempts - 1), 60000);
-                    console.log(`🔄 Reconectando em ${delay/1000}s...`);
-                    setTimeout(connectToWhatsApp, delay);
-                } else if (statusCode === DisconnectReason.loggedOut) {
-                    console.log('👋 Deslogado. Limpando sessao...');
-                    if (fs.existsSync(join(__dirname, 'auth_session'))) {
-                        fs.rmSync(join(__dirname, 'auth_session'), { recursive: true, force: true });
-                    }
-                    setTimeout(connectToWhatsApp, 3000);
-                }
-            } else if (connection === 'open') {
-                connectionStatus = 'Conectado';
-                lastQR = null;
-                pairingCode = null;
-                reconnectAttempts = 0;
-                startTime = Date.now();
-
-                // Pega o numero conectado
-                connectedPhone = sock.user?.id?.split(':')[0] || sock.user?.id?.split('@')[0];
-
-                console.log('\n✅ JESUS CRISTO BOT - ONLINE');
-                console.log(`📱 Conectado: ${connectedPhone}`);
-                console.log(`🌐 Dashboard: http://localhost:${PORT}\n`);
-
-                scheduler.initScheduler(async (phone, message) => sender.sendMessage(sock, phone, message));
-            }
-        }
-
-        if (events['creds.update']) await saveCreds();
-
-        if (events['messages.upsert']) {
-            const { messages, type } = events['messages.upsert'];
-            if (type === 'notify') {
-                for (const msg of messages) {
-                    messageCount++;
-                    await processIncomingMessage(msg);
-                }
-            }
-        }
-
-        if (events['presence.update']) {
-            const { id, presences } = events['presence.update'];
-            for (const [jid, presence] of Object.entries(presences)) {
-                nudgeManager.updatePresence(jid, presence.lastKnownPresence);
-                behaviorAnalyzer.onPresenceUpdate(jid, presence.lastKnownPresence);
-                if (presence.lastKnownPresence === 'available') nudgeManager.checkAndScheduleNudge(sock, jid);
-                if (presence.lastKnownPresence === 'composing') nudgeManager.cancelPendingNudge(jid);
-            }
-        }
-    });
-
-    return sock;
-}
-
-// ═══════════════════════════════════════════════════════════════
-// ROTEAMENTO
-// ═══════════════════════════════════════════════════════════════
-
-async function processIncomingMessage(message) {
-    const remoteJid = message.key.remoteJid;
-    if (message.key.fromMe || !remoteJid) return;
-
-    const msgContent = message.message;
-    if (!msgContent) return;
-
-    const contentType = getContentType(msgContent);
-    let userText = '';
-    let hasAudio = false;
-    let sharedContacts = [];
-
-    // Extracao de Conteudo (Texto, Imagem, Audio, Contatos)
-    if (contentType === 'conversation') {
-        userText = msgContent.conversation;
-    } else if (contentType === 'extendedTextMessage') {
-        userText = msgContent.extendedTextMessage?.text;
-    } else if (contentType === 'imageMessage') {
-        userText = msgContent.imageMessage?.caption || '[Imagem]';
-    } else if (contentType === 'audioMessage') {
-        hasAudio = true;
-        try {
-            const audioResult = await audioProcessor.processAudioMessage(message, sock);
-            userText = audioResult.text ? `[AUDIO TRANSCRITO]: ${audioResult.text}` : '[AUDIO recebido]';
-        } catch (e) {
-            userText = '[AUDIO recebido]';
-        }
-    } else if (contentType === 'contactMessage' || contentType === 'contactsArrayMessage') {
-        const contacts = contentType === 'contactMessage' ? [msgContent.contactMessage] : msgContent.contactsArrayMessage.contacts;
-        sharedContacts = contacts.map(c => ({
-            name: flowUtils.normalizeContactName(c.displayName),
-            jid: flowUtils.normalizeNumberWithCountry(flowUtils.extractNumberFromVcard(c.vcard)) + '@s.whatsapp.net',
-            number: flowUtils.normalizeNumberWithCountry(flowUtils.extractNumberFromVcard(c.vcard))
-        }));
-        const names = sharedContacts.map(c => c.name).join(', ');
-        userText = `Contatos encaminhados: ${names}`;
-    }
-
-    if (!userText && !hasAudio && sharedContacts.length === 0) return;
-
-    // Comando /zerar
-    if (userText?.trim().toLowerCase() === '/zerar') {
-        const perfil = db.getUsuario(remoteJid);
-        if (perfil) {
-            db.deleteUsuario(perfil.id);
-            await sender.sendMessage(sock, remoteJid, "ZERADO");
-            await handleConversation(sock, remoteJid, "Ola", message.pushName, message, [], false, { isUrgent: true, urgencyLevel: 'critico', adjustedDebounce: 0 });
-            return;
-        }
-    }
-
-    // Debounce inteligente
-    const urgency = flowUtils.detectUrgency(userText || '', remoteJid);
+    // Debounce inteligente - acumula mensagens rápidas
     if (!messageBuffer.has(remoteJid)) {
-        messageBuffer.set(remoteJid, { texts: [], contacts: [], hasAudio, urgency });
+        messageBuffer.set(remoteJid, { texts: [], contacts: [], hasAudio: false, urgency });
     }
 
     const buffer = messageBuffer.get(remoteJid);
-    if (userText) buffer.texts.push(userText);
-    if (sharedContacts.length > 0) buffer.contacts.push(...sharedContacts);
-    if (hasAudio) buffer.hasAudio = true;
-    if (urgency.urgencyScore > buffer.urgency.urgencyScore) buffer.urgency = urgency;
+    buffer.texts.push(userText);
+    if (urgency.urgencyScore > buffer.urgency.urgencyScore) {
+        buffer.urgency = urgency;
+    }
 
+    // Limpa timer anterior se existir
     if (buffer.timer) clearTimeout(buffer.timer);
+
+    // Define novo timer com debounce ajustado pela urgência
     buffer.timer = setTimeout(async () => {
-        const data = { ...buffer };
-        messageBuffer.delete(remoteJid);
-        await handleConversation(
-            sock,
-            remoteJid,
-            data.texts.join(" "),
-            message.pushName || 'Filho(a)',
-            message,
-            data.contacts,
-            data.hasAudio,
-            data.urgency
-        );
-    }, buffer.urgency.adjustedDebounce || 7000);
+        try {
+            const data = { ...buffer };
+            messageBuffer.delete(remoteJid);
+
+            // Extrai nome do usuário (vem no evento WAHA como pushName)
+            const userName = wahaData.pushName || wahaData.name || 'Amigo(a)';
+
+            // Chama handleConversation - padrão: sock=null para WAHA
+            await handleConversation(
+                null,                           // sock = null (WAHA não precisa socket)
+                remoteJid,                      // JID do usuário (telefone@s.whatsapp.net)
+                data.texts.join(" "),           // Mensagens concatenadas
+                userName,                       // Nome do usuário
+                wahaData,                       // Dados originais do evento WAHA
+                data.contacts,                  // Contatos extraídos (se houver)
+                data.hasAudio,                  // Flag audio (transcrito em audioProcessor)
+                data.urgency                    // Dados de urgência/crisis
+            );
+        } catch (error) {
+            console.error('[MessageBuffer] Erro ao processar conversa:', error.stack || error);
+        }
+    }, buffer.urgency.adjustedDebounce || 1500);
 }
 
+
 // ═══════════════════════════════════════════════════════════════
-// INICIALIZACAO
+// INICIALIZAÇÃO & CLEANUP
 // ═══════════════════════════════════════════════════════════════
 
-process.on('SIGINT', () => {
-    console.log('\n👋 Encerrando...');
-    if(db) db.closeDatabase();
-    httpServer.close();
+process.on('SIGINT', async () => {
+    console.log('\n👋 Encerrando Jesus Cristo Bot...');
+    try {
+        if (db?.closeDatabase) db.closeDatabase();
+        if (mongoState?.closeMongo) await mongoState.closeMongo();
+    } catch (err) {
+        console.error('Erro ao fechar recursos:', err.message);
+    }
     process.exit(0);
 });
 
 process.on('uncaughtException', (err) => {
-    console.error('[FATAL]', err);
+    console.error('[FATAL] Uncaught Exception:', err.stack || err);
 });
 
-console.log('\n🕊️ JESUS CRISTO BOT');
-console.log('═══════════════════════════════════════');
-if (USE_PAIRING_CODE) {
-    console.log('📱 Modo: Codigo de Pareamento');
-    console.log(`📞 Telefone: ${PHONE_NUMBER}`);
-} else {
-    console.log('📱 Modo: QR Code');
-}
-console.log('═══════════════════════════════════════\n');
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('[FATAL] Unhandled Rejection:', reason);
+});
 
-connectToWhatsApp().catch(console.error);
+// Inicia o servidor Express
+const server = app.listen(PORT, '0.0.0.0', async () => {
+    console.log('\n╔════════════════════════════════════════════════════╗');
+    console.log('║    JESUS CRISTO BOT - O BOM PASTOR DIGITAL        ║');
+    console.log('║           Modo: WAHA HTTP Webhooks                 ║');
+    console.log('╚════════════════════════════════════════════════════╝\n');
+
+    console.log('🔧 Configuração:');
+    console.log(`  📱 WAHA Endpoint: ${WAHA_URL}`);
+    console.log(`  🌐 Dashboard: http://localhost:${PORT}`);
+    console.log(`  📡 Webhook: POST /webhook/messages`);
+    console.log(`  🔑 Session: ${WAHA_SESSION}`);
+    console.log(`  🚀 Port: ${PORT}\n`);
+
+    // Inicializa MongoDB (para embeddings e session state)
+    try {
+        await mongoState.connectMongo();
+        console.log('✅ MongoDB conectado para embeddings/state');
+    } catch (err) {
+        console.error('⚠️  MongoDB indisponível:', err.message);
+        console.error('   Continuando sem persistent storage...');
+    }
+
+    // Inicializa scheduler de follow-ups automáticos
+    try {
+        scheduler.initScheduler(async (phone, message) => {
+            // Callback do scheduler: envia via WAHA usando sender
+            await sender.sendMessage(null, phone, message, 'medium');
+        });
+        console.log('✅ Scheduler inicializado (follow-ups automáticos)');
+    } catch (err) {
+        console.error('⚠️  Scheduler falhou:', err.message);
+    }
+
+    console.log('\n🚀 Bot pronto! Aguardando webhooks do WAHA...\n');
+});
